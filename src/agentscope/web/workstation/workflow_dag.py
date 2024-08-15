@@ -90,6 +90,45 @@ class ASDiGraph(nx.DiGraph):
         """
         agentscope.init(logger_level="DEBUG")
         sorted_nodes = list(nx.topological_sort(self))
+        print("sorted_nodes: ", sorted_nodes)
+        sorted_nodes = [
+            node_id
+            for node_id in sorted_nodes
+            if node_id not in self.nodes_not_in_graph
+        ]
+        print("nodes_not_in_graph: ", self.nodes_not_in_graph)
+        logger.info(f"sorted_nodes: {sorted_nodes}")
+        logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
+
+        # Cache output
+        values = {}
+
+        # Run with predecessors outputs
+        for node_id in sorted_nodes:
+            inputs = [
+                values[predecessor]
+                for predecessor in self.predecessors(node_id)
+            ]
+            logger.info(f"inputs: {inputs}")
+            print("len(inputs): ", len(inputs))
+            if not inputs:
+                values[node_id] = self.exec_node(node_id)
+            elif len(inputs):
+                # Note: only support exec with the first predecessor now
+                values[node_id] = self.exec_node(node_id, inputs[0])
+            else:
+                raise ValueError("Too many predecessors!")
+
+    def run_with_param(self, input_param: dict) -> Any:
+        """
+        Execute the computations associated with each node in the graph.
+
+        The method initializes AgentScope, performs a topological sort of
+        the nodes, and then runs each node's computation sequentially using
+        the outputs from its predecessors as inputs.
+        """
+        agentscope.init(logger_level="DEBUG")
+        sorted_nodes = list(nx.topological_sort(self))
         sorted_nodes = [
             node_id
             for node_id in sorted_nodes
@@ -108,13 +147,13 @@ class ASDiGraph(nx.DiGraph):
                 for predecessor in self.predecessors(node_id)
             ]
             if not inputs:
-                values[node_id] = self.exec_node(node_id)
-            elif len(inputs):
-                # Note: only support exec with the first predecessor now
+                values[node_id] = self.exec_node(node_id, input_param)
+            elif len(inputs) == 1:
                 values[node_id] = self.exec_node(node_id, inputs[0])
             else:
                 raise ValueError("Too many predecessors!")
 
+        return values[sorted_nodes[-1]]
     def compile(  # type: ignore[no-untyped-def]
         self,
         compiled_filename: str = "",
@@ -263,6 +302,9 @@ class ASDiGraph(nx.DiGraph):
             f"\nnode_id: {node_id}\nin_values:{x_in}",
         )
         opt = self.nodes[node_id]["opt"]
+        logger.debug(
+            f"\nnode_id: {node_id}\nopt:{opt}",
+        )
         out_values = opt(x_in)
         logger.debug(
             f"\nnode_id: {node_id}\nout_values:{out_values}",
