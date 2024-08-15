@@ -127,6 +127,17 @@ def test_json_load_file():
     assert result[0] == "True"
     assert "a" in result[1]
 
+
+def test_workflow_run():
+    from agentscope.web.workstation.workflow import (
+        start_workflow,
+        load_config,
+    )
+    script_path = "./test.json"
+    config = load_config(script_path)
+    dag = build_dag(config)
+    dag.run_with_param("{'b':123123}")
+
 if __name__ == "__main__":
     # 运行测试
-    test_json_load_file()
+    test_workflow_run()
