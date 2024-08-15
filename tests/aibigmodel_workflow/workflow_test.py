@@ -71,7 +71,20 @@ def test_json_load():
         "5": {
             "data": {
                 "args": {
-                    "variables": "{'a': 1, 'b': 2, 'c': 3}"
+                    "inputs": [],
+                    "outputs": [
+                        {
+                            "name": "poi",
+                            "type": "string",
+                            "value": "beijing"
+                        },
+                        {
+                            "name": "keywords",
+                            "type": "string",
+                            "value": "lifadian"
+                        }
+                    ],
+                    "settings": {}
                 }
             },
             "inputs": {
@@ -89,7 +102,18 @@ def test_json_load():
         "6": {
             "data": {
                 "args": {
-                    "variable_names": "a",
+                    "inputs": [
+                        {
+                            "name": "poi",
+                            "value": [],
+                        },
+                        {
+                            "name": "keywords",
+                            "value": [],
+                        },
+                    ],
+                    "outputs": [],
+                    "settings": {}
                 }
             },
             "inputs": {
