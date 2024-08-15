@@ -831,8 +831,26 @@ class WriteTextServiceNode(WorkflowNode):
 class StartNode(WorkflowNode):
     """
     新增的开始节点用于接收和存储用户输入的变量为全局变量.
-    source_kwargs输入dict比如
-    {"k1": "v1", "k2": "v2"}
+    source_kwargs输入dict
+    比如用户定义了该节点的输入和输出变量名、类型、value
+
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "poi",
+                "type": "string",
+                "desc": "节点功能中文描述",
+                "object_schema": null,
+                "list_schema": null,
+                "value": {
+                    "type": "generated",
+                    "content": null
+                }
+            },
+        ],
+        "settings": {}
+
+
     """
 
     node_type = WorkflowNodeType.START
@@ -845,17 +863,28 @@ class StartNode(WorkflowNode):
             dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        # source_kwargs 包含用户输入的变量
-        self.variables = source_kwargs
+        # source_kwargs 包含用户定义的节点输入输出变量
+        # 开始节点没有输入，只有输出
+        self.outputs = source_kwargs.get("outputs", [])
+        self.output_data = {}
+        # 提取输出变量的信息
+        for output in self.outputs:
+            output_name = output["name"]
+            # 需要保留类型吗？类型怎么使用
+            # output_type = output["type"]
+            output_value = output["value"]
+            self.output_data[output_name] = output_value
 
-        # 将变量variables存储为全局变量
-        for key, value in self.variables.items():
-            globals()[key] = value
+    def __call__(self, *args, **kwargs):
+        return self.output_data
 
     def compile(self) -> dict:
-        inits = "\n".join(
-            [f"global {key}; {key} = {repr(value)}" for key, value in self.variables.items()]
-        )
+        output_out = []
+        for output_name, output_value in self.output_data.items():
+            output_out.append(
+                f'global_vars["{output_name}"] = {repr(output_value)}'
+            )
+        inits = "\n".join(output_out)
 
         return {
             "imports": "",
@@ -866,7 +895,7 @@ class StartNode(WorkflowNode):
 
 class EndNode(WorkflowNode):
     """
-    新增的结束节点
+    结束节点只有输入没有输出
     """
     node_type = WorkflowNodeType.END
 
@@ -878,7 +907,9 @@ class EndNode(WorkflowNode):
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # source_kwargs contains the list of variable names to retrieve
-        self.variable_names = source_kwargs.get("variable_names", [])
+        self.inputs = source_kwargs.get("inputs", [])
+        self.variable_names = [input_data["name"] for input_data in self.inputs]
+        self.input_data = {}
 
     def __call__(self, x: dict = None) -> dict:
         result = {}
@@ -887,11 +918,21 @@ class EndNode(WorkflowNode):
                 result[var_name] = globals()[var_name]
             else:
                 result[var_name] = None
+        print("EndNode Output:", result)
 
         return result
 
     def compile(self) -> dict:
+        # 生成执行的代码，并逐行输出每个变量的查找结果
         execs = "\n".join(
+            [
+                f'print("Value for {var_name}: ", globals().get("{var_name}", None))'
+                for var_name in self.variable_names
+            ]
+        )
+
+        # 将找到的值存入 DEFAULT_FLOW_VAR 中
+        execs += "\n" + "\n".join(
             [
                 f'{DEFAULT_FLOW_VAR}["{var_name}"] = globals().get("{var_name}", None)'
                 for var_name in self.variable_names
@@ -903,6 +944,7 @@ class EndNode(WorkflowNode):
             "inits": "",
             "execs": execs,
         }
+
 
 
 class PythonServiceUserTypingNode(WorkflowNode):
@@ -927,6 +969,8 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.timeout = opt_kwargs.get("timeout", 300)
         self.use_docker = opt_kwargs.get("use_docker", None)
         self.maximum_memory_bytes = opt_kwargs.get("maximum_memory_bytes", None)
+        # 添加输出参数名称(可选)
+        self.result_var_name = opt_kwargs.get("result_var_name", "result")
 
     def compile(self) -> dict:
         # 将代码执行的所有必要参数格式化为字典
@@ -936,12 +980,17 @@ class PythonServiceUserTypingNode(WorkflowNode):
             f'timeout={self.timeout}, '
             f'use_docker={self.use_docker}, '
             f'maximum_memory_bytes={self.maximum_memory_bytes})'
+            # 节点运行结果存入输出变量
+            f'global_vars["{self.result_var_name}"] = {DEFAULT_FLOW_VAR}.result'
         )
+
+        save_result = f'global_vars["{self.result_var_name}"] = {DEFAULT_FLOW_VAR}'
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
                        "from agentscope.service import execute_python_code",
             "inits": f"{self.var_name} = ServiceFactory.get(execute_python_code)",
-            "execs": f"{self.var_name}.run({repr(self.python_code)})",
+            "execs": execs,
+
         }
 
 

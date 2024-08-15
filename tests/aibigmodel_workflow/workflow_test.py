@@ -71,7 +71,20 @@ def test_json_load():
         "5": {
             "data": {
                 "args": {
-                    "variables": "{'a': 1, 'b': 2, 'c': 3}"
+                    "inputs": [],
+                    "outputs": [
+                        {
+                            "name": "poi",
+                            "type": "string",
+                            "value": "beijing"
+                        },
+                        {
+                            "name": "keywords",
+                            "type": "string",
+                            "value": "lifadian"
+                        }
+                    ],
+                    "settings": {}
                 }
             },
             "inputs": {
@@ -89,7 +102,18 @@ def test_json_load():
         "6": {
             "data": {
                 "args": {
-                    "variable_names": "a",
+                    "inputs": [
+                        {
+                            "name": "poi",
+                            "value": [],
+                        },
+                        {
+                            "name": "keywords",
+                            "value": [],
+                        },
+                    ],
+                    "outputs": [],
+                    "settings": {}
                 }
             },
             "inputs": {
@@ -127,6 +151,8 @@ def test_json_load_file():
     assert result[0] == "True"
     assert "a" in result[1]
 
+
 if __name__ == "__main__":
     # 运行测试
-    test_json_load_file()
+    # test_json_load_file()
+    test_json_load()
