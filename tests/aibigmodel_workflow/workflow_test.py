@@ -199,11 +199,22 @@ def test_parse_json_to_dict():
     print(output['outputs'][0]['object_schema'])
     print(output['outputs'][0]['value'])
 
+def test_parse_pythoncode_to_code():
+    from agentscope.service.execute_code.exec_python import execute_python_code
+    from agentscope.web.workstation.workflow_node import parse_json_to_dict
+
+    input = "{\"settings\":{\"code\":\"# \\u5b9a\\u4e49\\u4e00\\u4e2a main \\u51fd\\u6570\\uff0c\\u4f20\\u5165 params \\u53c2\\u6570\\u3002params \\u4e2d\\u5305\\u542b\\u4e86\\u8282\\u70b9\\u914d\\u7f6e\\u7684\\u8f93\\u5165\\u53d8\\u91cf\\u3002\\n# \\u9700\\u8981\\u5b9a\\u4e49\\u4e00\\u4e2a\\u5b57\\u5178\\u4f5c\\u4e3a\\u8f93\\u51fa\\u53d8\\u91cf\\n# \\u5f15\\u7528\\u8282\\u70b9\\u5b9a\\u4e49\\u7684\\u53d8\\u91cf\\uff1aparams['\\u53d8\\u91cf\\u540d']\\n# \\u8fd0\\u884c\\u73af\\u5883 Python3\\uff1b\\u9884\\u7f6e Package\\uff1aNumPy\\n\\ndef main(params):\\n\\n    # \\u521b\\u5efa\\u4e00\\u4e2a\\u5b57\\u5178\\u4f5c\\u4e3a\\u8f93\\u51fa\\u53d8\\u91cf\\n    output_object ={\\n    \\n        # \\u5f15\\u7528\\u8282\\u70b9\\u5b9a\\u4e49\\u7684 city \\u53d8\\u91cf\\n        \\\"key0\\\": params['pois'],\\n\\n    }\\n    return   output_object\\n        \\n\",\"language\":\"Python\"}}"
+    print(input)
+    output = parse_json_to_dict(input)
+    code = output['settings']['code']
+    response = execute_python_code(code, use_docker=False)
+    print(response)
+
 
 if __name__ == "__main__":
     # 运行测试
     #test_workflow_run()
 
     # 解析json string
-    test_parse_json_to_dict()
+    test_parse_pythoncode_to_code()
 
