@@ -10,6 +10,9 @@ import traceback
 from datetime import datetime
 from typing import Tuple, Union, Any, Optional
 from pathlib import Path
+from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.web.workstation.workflow import load_config
+from agentscope._runtime import _runtime
 
 from flask import (
     Flask,
@@ -32,6 +35,7 @@ _app = Flask(__name__)
 _cache_dir = Path.home() / ".cache" / "agentscope-studio"
 _cache_db = _cache_dir / "agentscope.db"
 os.makedirs(str(_cache_dir), exist_ok=True)
+
 
 def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     """Check and convert the type of the 'id' column in the specified table
@@ -105,9 +109,11 @@ def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     finally:
         conn.close()
 
+
 def _is_windows() -> bool:
     """Check if the system is Windows."""
     return os.name == "nt"
+
 
 if _is_windows():
     _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{str(_cache_db)}"
@@ -123,6 +129,7 @@ CORS(_app)
 
 _RUNS_DIRS = []
 
+
 def _remove_file_paths(error_trace: str) -> str:
     """
     Remove the real traceback when exception happens.
@@ -132,9 +139,10 @@ def _remove_file_paths(error_trace: str) -> str:
 
     return cleaned_trace
 
+
 def _convert_to_py(  # type: ignore[no-untyped-def]
-    content: str,
-    **kwargs,
+        content: str,
+        **kwargs,
 ) -> Tuple:
     """
     Convert json config to python code.
@@ -149,6 +157,7 @@ def _convert_to_py(  # type: ignore[no-untyped-def]
         return "False", _remove_file_paths(
             f"Error: {e}\n\n" f"Traceback:\n" f"{traceback.format_exc()}",
         )
+
 
 @_app.route("/convert-to-py", methods=["POST"])
 def _convert_config_to_py() -> Response:
@@ -184,9 +193,9 @@ def _convert_config_to_py_and_run() -> Response:
     if status == "True":
         try:
             with tempfile.NamedTemporaryFile(
-                delete=False,
-                suffix=".py",
-                mode="w+t",
+                    delete=False,
+                    suffix=".py",
+                    mode="w+t",
             ) as tmp:
                 tmp.write(py_code)
                 tmp.flush()
@@ -200,11 +209,69 @@ def _convert_config_to_py_and_run() -> Response:
             )
     return jsonify(py_code=py_code, is_success=status, run_id=run_id)
 
+
+@_app.route("/workflow-run", methods=["POST"])
+def workflow_run() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    # script_path 从 content 中提取, 需要数据库持久化
+    script_path = "./test.json"
+    config = load_config(script_path)
+    dag = build_dag(config)
+    # content中的data内容
+    result = dag.run_with_param(content)
+    # 两种方案，一种是在run_with_param后直接返回结果，这里可能需要Python节点or其他节点有对应的出入参处理逻辑
+    # 第二种为实现Python or其他节点的complie逻辑，之后将原本config文件内入参替换，替换后转换为python code执行，返回python执行结果
+
+    return jsonify(result=result)
+
+
+def front_dict_format_convert(origin_dict: dict) -> dict:
+    converted_dict = {}
+    nodes = origin_dict.get("nodes", [])
+    edges = origin_dict.get("edges", [])
+
+    for node in nodes:
+        node_id = node.get("id")
+        node_data = {
+            "data": {
+                "args": node.get("data")
+            },
+            "inputs": {
+                "input_1": {
+                    "connections": []
+                }
+            },
+            "outputs": {
+                "output_1": {
+                    "connections": []
+                }
+            },
+            "name": node.get("type")
+        }
+        converted_dict.setdefault(node_id, node_data)
+
+        for edge in edges:
+            if edge["source_node_id"] == node_id:
+                converted_dict[node_id]["outputs"]["output_1"]["connections"].append(
+                    {'node': edge["source_node_id"], 'output': "input_1"}
+                )
+            elif edge["target_node_id"] == node_id:
+                converted_dict[node_id]["inputs"]["input_1"]["connections"].append(
+                    {'node': edge["target_node_id"], 'input': "output_1"}
+                )
+
+    return converted_dict
+
+
 def init(
-    host: str = "127.0.0.1",
-    port: int = 5001,
-    run_dirs: Optional[Union[str, list[str]]] = None,
-    debug: bool = False,
+        host: str = "127.0.0.1",
+        port: int = 5001,
+        run_dirs: Optional[Union[str, list[str]]] = None,
+        debug: bool = False,
 ) -> None:
     """Start the AgentScope Studio web UI with the given configurations.
 
