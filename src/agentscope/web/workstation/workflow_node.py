@@ -36,7 +36,21 @@ from agentscope.service import (
     ServiceFactory,
 )
 
+import json
+
 DEFAULT_FLOW_VAR = "flow"
+
+
+def parse_json_to_dict(extract_text: str) -> dict:
+    # Parse the content into JSON object
+    try:
+        parsed_json = json.loads(extract_text)
+        if type(parsed_json) != dict:
+            raise Exception("json result is list, not dict")
+        return parsed_json
+    except json.decoder.JSONDecodeError as e:
+        raise e
+    pass
 
 
 class WorkflowNodeType(IntEnum):

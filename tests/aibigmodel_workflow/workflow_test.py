@@ -162,6 +162,48 @@ def test_workflow_run():
     dag = build_dag(config)
     dag.run_with_param("{'b':123123}")
 
+def test_parse_json_to_dict():
+    from agentscope.web.workstation.workflow_node import parse_json_to_dict
+
+    input = '''
+{
+    "outputs": [
+        {
+            "name": "poi",
+            "type": "string",
+            "desc": "\u5174\u8da3\u70b9\u540d\u79f0\uff0c\u4f8b\u5982\u57ce\u5e02\u3001\u53bf\u57ce\u7b49",
+            "object_schema": null,
+            "list_schema": null,
+            "value": {
+                "type": "generated",
+                "content": null
+            }
+        },
+        {
+            "name": "keywords",
+            "type": "string",
+            "desc": "\u5174\u8da3\u70b9\u5468\u8fb9\u76f8\u5173\u7684\u5173\u952e\u8bcd\uff0c\u4f8b\u5982\u5496\u5561\u9986\u3001\u8425\u4e1a\u5385\u7b49",
+            "object_schema": null,
+            "list_schema": null,
+            "value": {
+                "type": "generated",
+                "content": null
+            }
+        }
+    ]
+}
+    '''
+    output = parse_json_to_dict(input)
+    print(type(output))
+    print(output['outputs'][0]['name'])
+    print(output['outputs'][0]['object_schema'])
+    print(output['outputs'][0]['value'])
+
+
 if __name__ == "__main__":
     # 运行测试
-    test_workflow_run()
+    #test_workflow_run()
+
+    # 解析json string
+    test_parse_json_to_dict()
+
