@@ -49,26 +49,7 @@ def test_json_load():
     import json
 
     data = {
-        "4": {
-            "data": {
-                "elements": [
-                    "5",
-                    "6"
-                ]
-            },
-            "inputs": {
-                "input_1": {
-                    "connections": []
-                }
-            },
-            "name": "SequentialPipeline",
-            "outputs": {
-                "output_1": {
-                    "connections": []
-                }
-            }
-        },
-        "5": {
+        "1": {
             "data": {
                 "args": {
                     "inputs": [],
@@ -95,11 +76,16 @@ def test_json_load():
             "name": "StartNode",
             "outputs": {
                 "output_1": {
-                    "connections": []
+                    "connections": [
+                        {
+                            "node": "2",
+                            "output": "input_1"
+                        }
+                    ]
                 }
             }
         },
-        "6": {
+        "2": {
             "data": {
                 "args": {
                     "inputs": [
@@ -118,7 +104,12 @@ def test_json_load():
             },
             "inputs": {
                 "input_1": {
-                    "connections": []
+                    "connections": [
+                        {
+                            "input": "output_1",
+                            "node": "1"
+                        }
+                    ]
                 }
             },
             "name": "EndNode",
@@ -159,8 +150,10 @@ def test_workflow_run():
     )
     script_path = "./test.json"
     config = load_config(script_path)
+    dict1 = {'poi': 123123}
     dag = build_dag(config)
-    dag.run_with_param("{'b':123123}")
+    dag.run_with_param(dict1)
+
 
 def test_parse_json_to_dict():
     from agentscope.web.workstation.workflow_node import parse_json_to_dict
