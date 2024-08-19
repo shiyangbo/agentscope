@@ -893,7 +893,12 @@ class StartNode(WorkflowNode):
         # opt_kwargs 包含用户定义的节点输入输出变量
 
     def __call__(self, *args, **kwargs):
-        for k, v in kwargs:
+        if len(args) == 0:
+            return
+        if not isinstance(args[0], dict):
+            raise Exception("input param is not dict")
+
+        for k, v in args[0]:
             if k not in self.output_data:
                 continue
             self.output_data[k] = v
