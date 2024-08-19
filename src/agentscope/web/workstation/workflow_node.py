@@ -34,7 +34,10 @@ from agentscope.service import (
     write_text_file,
     execute_python_code,
     ServiceFactory,
+    ServiceToolkit,
+    api_request,
 )
+
 
 import json
 
@@ -844,7 +847,7 @@ class WriteTextServiceNode(WorkflowNode):
 class StartNode(WorkflowNode):
     """
     新增的开始节点用于接收和存储用户输入的变量为全局变量.
-    source_kwargs输入dict
+    opt_kwargs输入dict
     比如用户定义了该节点的输入和输出变量名、类型、value
 
         "inputs": [],
@@ -878,7 +881,7 @@ class StartNode(WorkflowNode):
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # source_kwargs 包含用户定义的节点输入输出变量
         # 开始节点没有输入，只有输出
-        self.outputs = source_kwargs.get("outputs", [])
+        self.outputs = opt_kwargs.get("outputs", [])
         self.output_data = {}
         # 提取输出变量的信息
         for output in self.outputs:
@@ -920,7 +923,7 @@ class EndNode(WorkflowNode):
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # source_kwargs contains the list of variable names to retrieve
-        self.inputs = source_kwargs.get("inputs", [])
+        self.inputs = opt_kwargs.get("inputs", [])
         self.variable_names = [input_data["name"] for input_data in self.inputs]
         self.input_data = {}
 
@@ -937,7 +940,7 @@ class EndNode(WorkflowNode):
 
     def compile(self) -> dict:
         # 生成执行的代码，并逐行输出每个变量的查找结果
-        execs = "\n".join(
+        inits = "\n".join(
             [
                 f'print("Value for {var_name}: ", globals().get("{var_name}", None))'
                 for var_name in self.variable_names
@@ -945,7 +948,7 @@ class EndNode(WorkflowNode):
         )
 
         # 将找到的值存入 DEFAULT_FLOW_VAR 中
-        execs += "\n" + "\n".join(
+        inits += "\n" + "\n".join(
             [
                 f'{DEFAULT_FLOW_VAR}["{var_name}"] = globals().get("{var_name}", None)'
                 for var_name in self.variable_names
@@ -954,8 +957,8 @@ class EndNode(WorkflowNode):
 
         return {
             "imports": "",
-            "inits": "",
-            "execs": execs,
+            "inits": inits,
+            "execs": "",
         }
 
 
@@ -977,7 +980,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        self.service_func = ServiceFactory.get(execute_python_code)
+        self.service_func = ServiceToolkit.get(execute_python_code)
         self.python_code = opt_kwargs.get("python_code", "")
         self.timeout = opt_kwargs.get("timeout", 300)
         self.use_docker = opt_kwargs.get("use_docker", None)
@@ -1005,6 +1008,40 @@ class PythonServiceUserTypingNode(WorkflowNode):
             "execs": execs,
 
         }
+
+
+# 新增通用api调用节点，目前还不能使用需要输入auth key的api
+class ApiServiceNode(WorkflowNode):
+    """
+    API Service Node for executing HTTP requests using the api_request function.
+    """
+
+    node_type = WorkflowNodeType.SERVICE
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        # 将 api_request 函数与 opt_kwargs 参数一起传递给 ServiceToolkit
+        self.service_func = ServiceToolkit.get(
+            api_request,
+            **self.opt_kwargs,
+        )
+
+    def compile(self) -> dict:
+        return {
+            "imports": "",
+            "inits": "",
+            "execs": "",
+        }
+
+    def __call__(self, *args, **kwargs):
+        # 执行服务函数并返回结果
+        return self.service_func
 
 
 NODE_NAME_MAPPING = {

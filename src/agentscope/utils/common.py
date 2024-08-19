@@ -121,6 +121,7 @@ def write_file(content: str, file_path: str) -> ServiceResponse:
         )
 
 
+# 新增get请求发送函数
 def requests_get(
     url: str,
     params: dict,
