@@ -81,11 +81,11 @@ class WorkflowNode(ABC):
     node_type = None
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         """
         Initialize nodes. Implement specific initialization logic in
@@ -128,11 +128,11 @@ class ModelNode(WorkflowNode):
     node_type = WorkflowNodeType.MODEL
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         read_model_configs([self.opt_kwargs])
@@ -156,11 +156,11 @@ class MsgNode(WorkflowNode):
     node_type = WorkflowNodeType.MESSAGE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.msg = Msg(**self.opt_kwargs)
@@ -172,7 +172,7 @@ class MsgNode(WorkflowNode):
         return {
             "imports": "from agentscope.message import Msg",
             "inits": f"{DEFAULT_FLOW_VAR} = Msg"
-                     f"({kwarg_converter(self.opt_kwargs)})",
+            f"({kwarg_converter(self.opt_kwargs)})",
             "execs": "",
         }
 
@@ -185,11 +185,11 @@ class DialogAgentNode(WorkflowNode):
     node_type = WorkflowNodeType.AGENT
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = DialogAgent(**self.opt_kwargs)
@@ -201,9 +201,9 @@ class DialogAgentNode(WorkflowNode):
         return {
             "imports": "from agentscope.agents import DialogAgent",
             "inits": f"{self.var_name} = DialogAgent("
-                     f"{kwarg_converter(self.opt_kwargs)})",
+            f"{kwarg_converter(self.opt_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -215,11 +215,11 @@ class UserAgentNode(WorkflowNode):
     node_type = WorkflowNodeType.AGENT
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = UserAgent(**self.opt_kwargs)
@@ -231,9 +231,9 @@ class UserAgentNode(WorkflowNode):
         return {
             "imports": "from agentscope.agents import UserAgent",
             "inits": f"{self.var_name} = UserAgent("
-                     f"{kwarg_converter(self.opt_kwargs)})",
+            f"{kwarg_converter(self.opt_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -245,11 +245,11 @@ class TextToImageAgentNode(WorkflowNode):
     node_type = WorkflowNodeType.AGENT
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = TextToImageAgent(**self.opt_kwargs)
@@ -261,9 +261,9 @@ class TextToImageAgentNode(WorkflowNode):
         return {
             "imports": "from agentscope.agents import TextToImageAgent",
             "inits": f"{self.var_name} = TextToImageAgent("
-                     f"{kwarg_converter(self.opt_kwargs)})",
+            f"{kwarg_converter(self.opt_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -275,11 +275,11 @@ class DictDialogAgentNode(WorkflowNode):
     node_type = WorkflowNodeType.AGENT
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = DictDialogAgent(**self.opt_kwargs)
@@ -291,9 +291,9 @@ class DictDialogAgentNode(WorkflowNode):
         return {
             "imports": "from agentscope.agents import DictDialogAgent",
             "inits": f"{self.var_name} = DictDialogAgent("
-                     f"{kwarg_converter(self.opt_kwargs)})",
+            f"{kwarg_converter(self.opt_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -305,11 +305,11 @@ class ReActAgentNode(WorkflowNode):
     node_type = WorkflowNodeType.AGENT
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # Build tools
@@ -327,10 +327,10 @@ class ReActAgentNode(WorkflowNode):
         return {
             "imports": "from agentscope.agents import ReActAgent",
             "inits": f"{self.var_name} = ReActAgent"
-                     f"({kwarg_converter(self.opt_kwargs)}, tools"
-                     f"={deps_converter(self.dep_vars)})",
+            f"({kwarg_converter(self.opt_kwargs)}, tools"
+            f"={deps_converter(self.dep_vars)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -345,11 +345,11 @@ class MsgHubNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.announcement = Msg(
@@ -388,7 +388,7 @@ class MsgHubNode(WorkflowNode):
         """
         return {
             "imports": "from agentscope.msghub import msghub\n"
-                       "from agentscope.message import Msg",
+            "from agentscope.message import Msg",
             "inits": "",
             "execs": execs,
         }
@@ -405,11 +405,11 @@ class PlaceHolderNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = placeholder
@@ -420,10 +420,10 @@ class PlaceHolderNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.pipelines.functional import "
-                       "placeholder",
+            "placeholder",
             "inits": f"{self.var_name} = placeholder",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -438,11 +438,11 @@ class SequentialPipelineNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.pipeline = SequentialPipeline(operators=self.dep_opts)
@@ -454,9 +454,9 @@ class SequentialPipelineNode(WorkflowNode):
         return {
             "imports": "from agentscope.pipelines import SequentialPipeline",
             "inits": f"{self.var_name} = SequentialPipeline("
-                     f"{deps_converter(self.dep_vars)})",
+            f"{deps_converter(self.dep_vars)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -471,15 +471,15 @@ class ForLoopPipelineNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         assert (
-                len(self.dep_opts) == 1
+            len(self.dep_opts) == 1
         ), "ForLoopPipelineNode can only contain one PipelineNode."
         self.pipeline = ForLoopPipeline(
             loop_body_operators=self.dep_opts[0],
@@ -493,11 +493,11 @@ class ForLoopPipelineNode(WorkflowNode):
         return {
             "imports": "from agentscope.pipelines import ForLoopPipeline",
             "inits": f"{self.var_name} = ForLoopPipeline("
-                     f"loop_body_operators="
-                     f"{deps_converter(self.dep_vars)},"
-                     f" {kwarg_converter(self.source_kwargs)})",
+            f"loop_body_operators="
+            f"{deps_converter(self.dep_vars)},"
+            f" {kwarg_converter(self.source_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -512,15 +512,15 @@ class WhileLoopPipelineNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         assert (
-                len(self.dep_opts) == 1
+            len(self.dep_opts) == 1
         ), "WhileLoopPipelineNode can only contain one PipelineNode."
         self.pipeline = WhileLoopPipeline(
             loop_body_operators=self.dep_opts[0],
@@ -534,11 +534,11 @@ class WhileLoopPipelineNode(WorkflowNode):
         return {
             "imports": "from agentscope.pipelines import WhileLoopPipeline",
             "inits": f"{self.var_name} = WhileLoopPipeline("
-                     f"loop_body_operators="
-                     f"{deps_converter(self.dep_vars)},"
-                     f" {kwarg_converter(self.source_kwargs)})",
+            f"loop_body_operators="
+            f"{deps_converter(self.dep_vars)},"
+            f" {kwarg_converter(self.source_kwargs)})",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.var_name}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -553,15 +553,15 @@ class IfElsePipelineNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         assert (
-                0 < len(self.dep_opts) <= 2
+            0 < len(self.dep_opts) <= 2
         ), "IfElsePipelineNode must contain one or two PipelineNode."
         if len(self.dep_opts) == 1:
             self.pipeline = IfElsePipeline(
@@ -585,15 +585,15 @@ class IfElsePipelineNode(WorkflowNode):
             return {
                 "imports": imports,
                 "inits": f"{self.var_name} = IfElsePipeline("
-                         f"if_body_operators={self.dep_vars[0]})",
+                f"if_body_operators={self.dep_vars[0]})",
                 "execs": execs,
             }
         elif len(self.dep_vars) == 2:
             return {
                 "imports": imports,
                 "inits": f"{self.var_name} = IfElsePipeline("
-                         f"if_body_operators={self.dep_vars[0]}, "
-                         f"else_body_operators={self.dep_vars[1]})",
+                f"if_body_operators={self.dep_vars[0]}, "
+                f"else_body_operators={self.dep_vars[1]})",
                 "execs": execs,
             }
         raise ValueError
@@ -610,11 +610,11 @@ class SwitchPipelineNode(WorkflowNode):
     node_type = WorkflowNodeType.PIPELINE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         assert 0 < len(self.dep_opts), (
@@ -638,9 +638,9 @@ class SwitchPipelineNode(WorkflowNode):
             )
 
         for key, value, var in zip(
-                self.opt_kwargs["cases"],
-                self.dep_opts,
-                self.dep_vars,
+            self.opt_kwargs["cases"],
+            self.dep_opts,
+            self.dep_vars,
         ):
             case_operators[key] = value.pipeline
             self.case_operators_var[key] = var
@@ -664,9 +664,9 @@ class SwitchPipelineNode(WorkflowNode):
         return {
             "imports": imports,
             "inits": f"{self.var_name} = SwitchPipeline(case_operators="
-                     f"{dict_converter(self.case_operators_var)}, "
-                     f"default_operators={self.default_var_name},"
-                     f" {kwarg_converter(self.source_kwargs)})",
+            f"{dict_converter(self.case_operators_var)}, "
+            f"default_operators={self.default_var_name},"
+            f" {kwarg_converter(self.source_kwargs)})",
             "execs": execs,
         }
 
@@ -683,11 +683,11 @@ class CopyNode(WorkflowNode):
     node_type = WorkflowNodeType.COPY
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         assert len(self.dep_opts) == 1, "CopyNode can only have one parent!"
@@ -701,7 +701,7 @@ class CopyNode(WorkflowNode):
             "imports": "",
             "inits": "",
             "execs": f"{DEFAULT_FLOW_VAR} = {self.dep_vars[0]}"
-                     f"({DEFAULT_FLOW_VAR})",
+            f"({DEFAULT_FLOW_VAR})",
         }
 
 
@@ -713,11 +713,11 @@ class BingSearchServiceNode(WorkflowNode):
     node_type = WorkflowNodeType.SERVICE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.service_func = ServiceFactory.get(bing_search, **self.opt_kwargs)
@@ -725,9 +725,9 @@ class BingSearchServiceNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import bing_search",
+            "from agentscope.service import bing_search",
             "inits": f"{self.var_name} = ServiceFactory.get(bing_search,"
-                     f" {kwarg_converter(self.opt_kwargs)})",
+            f" {kwarg_converter(self.opt_kwargs)})",
             "execs": "",
         }
 
@@ -740,11 +740,11 @@ class GoogleSearchServiceNode(WorkflowNode):
     node_type = WorkflowNodeType.SERVICE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.service_func = ServiceFactory.get(
@@ -755,9 +755,9 @@ class GoogleSearchServiceNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import google_search",
+            "from agentscope.service import google_search",
             "inits": f"{self.var_name} = ServiceFactory.get(google_search,"
-                     f" {kwarg_converter(self.opt_kwargs)})",
+            f" {kwarg_converter(self.opt_kwargs)})",
             "execs": "",
         }
 
@@ -770,11 +770,11 @@ class PythonServiceNode(WorkflowNode):
     node_type = WorkflowNodeType.SERVICE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.service_func = ServiceFactory.get(execute_python_code)
@@ -782,9 +782,9 @@ class PythonServiceNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import execute_python_code",
+            "from agentscope.service import execute_python_code",
             "inits": f"{self.var_name} = ServiceFactory.get("
-                     f"execute_python_code)",
+            f"execute_python_code)",
             "execs": "",
         }
 
@@ -797,11 +797,11 @@ class ReadTextServiceNode(WorkflowNode):
     node_type = WorkflowNodeType.SERVICE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.service_func = ServiceFactory.get(read_text_file)
@@ -809,7 +809,7 @@ class ReadTextServiceNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import read_text_file",
+            "from agentscope.service import read_text_file",
             "inits": f"{self.var_name} = ServiceFactory.get(read_text_file)",
             "execs": "",
         }
@@ -823,11 +823,11 @@ class WriteTextServiceNode(WorkflowNode):
     node_type = WorkflowNodeType.SERVICE
 
     def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+        self,
+        node_id: str,
+        opt_kwargs: dict,
+        source_kwargs: dict,
+        dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.service_func = ServiceFactory.get(write_text_file)
@@ -835,7 +835,7 @@ class WriteTextServiceNode(WorkflowNode):
     def compile(self) -> dict:
         return {
             "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import write_text_file",
+            "from agentscope.service import write_text_file",
             "inits": f"{self.var_name} = ServiceFactory.get(write_text_file)",
             "execs": "",
         }
@@ -1074,9 +1074,9 @@ NODE_NAME_MAPPING = {
 
 
 def get_all_agents(
-        node: WorkflowNode,
-        seen_agents: Optional[set] = None,
-        return_var: bool = False,
+    node: WorkflowNode,
+    seen_agents: Optional[set] = None,
+    return_var: bool = False,
 ) -> List:
     """
     Retrieve all unique agent objects from a pipeline.

@@ -31,8 +31,8 @@ def api_request(
     headers（`Optional[Dict[str，Any]]`）：请求中要包含的标头。
     **kwargs（`Any`）：传递给请求的其他关键字参数。
 
-    退货：
-    `ServiceResponse：一个具有“状态”和“内容”的响应对象。
+    返回：
+    `ServiceResponse：具有“status”和“content”的响应对象。
     """
     if headers is None:
         headers = {}
