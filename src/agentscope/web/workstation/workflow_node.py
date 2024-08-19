@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import List, Optional
+from loguru import logger
 
 from agentscope import msghub
 from agentscope.agents import (
@@ -43,6 +44,7 @@ import json
 
 DEFAULT_FLOW_VAR = "flow"
 
+params_pool = {}
 
 def parse_json_to_dict(extract_text: str) -> dict:
     # Parse the content into JSON object
@@ -53,6 +55,17 @@ def parse_json_to_dict(extract_text: str) -> dict:
         return parsed_json
     except json.decoder.JSONDecodeError as e:
         raise e
+
+def generate_python_param(param_spec: dict, params_pool: dict) -> dict:
+    paramName = param_spec['name']
+
+    if param_spec['value']['type'] == 'ref':
+        referenceNodeName = param_spec['value']['content']['ref_node_id']
+        referenceParamName = param_spec['value']['content']['ref_var_name']
+        paramValue = params_pool[referenceNodeName][referenceParamName]
+        return {paramName: paramValue}
+
+    return {paramName: param_spec['value']['content']}
 
 
 class WorkflowNodeType(IntEnum):
@@ -846,9 +859,14 @@ class WriteTextServiceNode(WorkflowNode):
 # 开始节点实际上是定义全局变量的，此外别无操作，那么可以参考massage_hub节点实现
 class StartNode(WorkflowNode):
     """
+<<<<<<< Updated upstream
     新增的开始节点用于接收和存储用户输入的变量为全局变量.
     opt_kwargs输入dict
     比如用户定义了该节点的输入和输出变量名、类型、value
+=======
+    开始节点代表输入参数列表.
+    source_kwargs字段，用户定义了该节点的输入和输出变量名、类型、value
+>>>>>>> Stashed changes
 
         "inputs": [],
         "outputs": [
@@ -874,37 +892,71 @@ class StartNode(WorkflowNode):
     def __init__(
             self,
             node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
+            params_json_str: str
     ) -> None:
-        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        super().__init__(node_id, {}, {}, [])
         # source_kwargs 包含用户定义的节点输入输出变量
         # 开始节点没有输入，只有输出
-        self.outputs = opt_kwargs.get("outputs", [])
-        self.output_data = {}
-        # 提取输出变量的信息
-        for output in self.outputs:
-            output_name = output["name"]
-            # 需要保留类型吗？类型怎么使用
-            # output_type = output["type"]
-            output_value = output["value"]
-            self.output_data[output_name] = output_value
+        self.params_json_str = params_json_str
 
     def __call__(self, *args, **kwargs):
         return self.output_data
 
     def compile(self) -> dict:
-        output_out = []
-        for output_name, output_value in self.output_data.items():
-            output_out.append(
-                f'global_vars["{output_name}"] = {repr(output_value)}'
-            )
-        inits = "\n".join(output_out)
+        # 入参的在这里初始化
+        # {
+        #     "inputs": [...],
+        #     "outputs": [...],
+        #     "settings": {...}
+        # }
+        global params_pool
+        params_pool.setdefault(self.node_id, {})
+
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start param parser")
+        params_dict = parse_json_to_dict(self.params_json_str)
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, params: {params_dict}")
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        for i, param_spec in enumerate(params_dict['outputs']):
+            # param_obj_dict 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+            param_one_dict = generate_python_param(param_spec, params_pool)
+            params_pool[self.node_id] |= param_one_dict
 
         return {
             "imports": "",
-            "inits": inits,
+            "inits": "",
             "execs": "",
         }
 

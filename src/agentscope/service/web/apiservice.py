@@ -63,12 +63,13 @@ def api_request(
     try:
         # Attempt to parse response as JSON
         content = resp.json()
-        # JSON转换为字符串
-        content = j.dumps(content, ensure_ascii=False, indent=4)
+
     except ValueError:
 
         # If response is not JSON, return raw text
         content = resp.text
+        # 这里我们约定，返回内容必须是json字符串，所以这里简单定义
+        content = j.dumps({'data': content}, ensure_ascii=False, indent=4)
 
     return ServiceResponse(ServiceExecStatus.SUCCESS, content)
 
