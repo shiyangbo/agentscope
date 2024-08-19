@@ -49,26 +49,7 @@ def test_json_load():
     import json
 
     data = {
-        "4": {
-            "data": {
-                "elements": [
-                    "5",
-                    "6"
-                ]
-            },
-            "inputs": {
-                "input_1": {
-                    "connections": []
-                }
-            },
-            "name": "SequentialPipeline",
-            "outputs": {
-                "output_1": {
-                    "connections": []
-                }
-            }
-        },
-        "5": {
+        "1": {
             "data": {
                 "args": {
                     "inputs": [],
@@ -95,11 +76,16 @@ def test_json_load():
             "name": "StartNode",
             "outputs": {
                 "output_1": {
-                    "connections": []
+                    "connections": [
+                        {
+                            "node": "2",
+                            "output": "input_1"
+                        }
+                    ]
                 }
             }
         },
-        "6": {
+        "2": {
             "data": {
                 "args": {
                     "inputs": [
@@ -118,7 +104,12 @@ def test_json_load():
             },
             "inputs": {
                 "input_1": {
-                    "connections": []
+                    "connections": [
+                        {
+                            "input": "output_1",
+                            "node": "1"
+                        }
+                    ]
                 }
             },
             "name": "EndNode",
@@ -159,9 +150,64 @@ def test_workflow_run():
     )
     script_path = "./test.json"
     config = load_config(script_path)
+    dict1 = {'poi': 123123}
     dag = build_dag(config)
-    dag.run_with_param("{'b':123123}")
+    dag.run_with_param(dict1)
+
+
+def test_parse_json_to_dict():
+    from agentscope.web.workstation.workflow_node import parse_json_to_dict
+
+    input = '''
+{
+    "outputs": [
+        {
+            "name": "poi",
+            "type": "string",
+            "desc": "\u5174\u8da3\u70b9\u540d\u79f0\uff0c\u4f8b\u5982\u57ce\u5e02\u3001\u53bf\u57ce\u7b49",
+            "object_schema": null,
+            "list_schema": null,
+            "value": {
+                "type": "generated",
+                "content": null
+            }
+        },
+        {
+            "name": "keywords",
+            "type": "string",
+            "desc": "\u5174\u8da3\u70b9\u5468\u8fb9\u76f8\u5173\u7684\u5173\u952e\u8bcd\uff0c\u4f8b\u5982\u5496\u5561\u9986\u3001\u8425\u4e1a\u5385\u7b49",
+            "object_schema": null,
+            "list_schema": null,
+            "value": {
+                "type": "generated",
+                "content": null
+            }
+        }
+    ]
+}
+    '''
+    output = parse_json_to_dict(input)
+    print(type(output))
+    print(output['outputs'][0]['name'])
+    print(output['outputs'][0]['object_schema'])
+    print(output['outputs'][0]['value'])
+
+def test_parse_pythoncode_to_code():
+    from agentscope.service.execute_code.exec_python import execute_python_code
+    from agentscope.web.workstation.workflow_node import parse_json_to_dict
+
+    input = "{\"settings\":{\"code\":\"# \\u5b9a\\u4e49\\u4e00\\u4e2a main \\u51fd\\u6570\\uff0c\\u4f20\\u5165 params \\u53c2\\u6570\\u3002params \\u4e2d\\u5305\\u542b\\u4e86\\u8282\\u70b9\\u914d\\u7f6e\\u7684\\u8f93\\u5165\\u53d8\\u91cf\\u3002\\n# \\u9700\\u8981\\u5b9a\\u4e49\\u4e00\\u4e2a\\u5b57\\u5178\\u4f5c\\u4e3a\\u8f93\\u51fa\\u53d8\\u91cf\\n# \\u5f15\\u7528\\u8282\\u70b9\\u5b9a\\u4e49\\u7684\\u53d8\\u91cf\\uff1aparams['\\u53d8\\u91cf\\u540d']\\n# \\u8fd0\\u884c\\u73af\\u5883 Python3\\uff1b\\u9884\\u7f6e Package\\uff1aNumPy\\n\\ndef main(params):\\n\\n    # \\u521b\\u5efa\\u4e00\\u4e2a\\u5b57\\u5178\\u4f5c\\u4e3a\\u8f93\\u51fa\\u53d8\\u91cf\\n    output_object ={\\n    \\n        # \\u5f15\\u7528\\u8282\\u70b9\\u5b9a\\u4e49\\u7684 city \\u53d8\\u91cf\\n        \\\"key0\\\": params['pois'],\\n\\n    }\\n    return   output_object\\n        \\n\",\"language\":\"Python\"}}"
+    print(input)
+    output = parse_json_to_dict(input)
+    code = output['settings']['code']
+    response = execute_python_code(code, use_docker=False)
+    print(response)
+
 
 if __name__ == "__main__":
     # 运行测试
-    test_workflow_run()
+    #test_workflow_run()
+
+    # 解析json string
+    test_parse_pythoncode_to_code()
+

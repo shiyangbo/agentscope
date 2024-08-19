@@ -38,6 +38,7 @@ from agentscope.service import (
     api_request,
 )
 
+
 import json
 
 DEFAULT_FLOW_VAR = "flow"
@@ -46,13 +47,12 @@ DEFAULT_FLOW_VAR = "flow"
 def parse_json_to_dict(extract_text: str) -> dict:
     # Parse the content into JSON object
     try:
-        parsed_json = json.loads(extract_text)
-        if type(parsed_json) != dict:
-            raise Exception("json result is list, not dict")
+        parsed_json = json.loads(extract_text, strict=False)
+        if not isinstance(parsed_json, dict):
+            raise Exception(f"json text type({type(parsed_json)}) is not dict")
         return parsed_json
     except json.decoder.JSONDecodeError as e:
         raise e
-    pass
 
 
 class WorkflowNodeType(IntEnum):
@@ -960,6 +960,7 @@ class EndNode(WorkflowNode):
             "inits": inits,
             "execs": "",
         }
+
 
 
 class PythonServiceUserTypingNode(WorkflowNode):
