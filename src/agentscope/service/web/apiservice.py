@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Search question in the web"""
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 import requests
+import json as j
+
 from agentscope.service.service_response import ServiceResponse
 from agentscope.service.service_status import ServiceExecStatus
 
@@ -61,7 +63,10 @@ def api_request(
     try:
         # Attempt to parse response as JSON
         content = resp.json()
+        # JSON转换为字符串
+        content = j.dumps(content, ensure_ascii=False, indent=4)
     except ValueError:
+
         # If response is not JSON, return raw text
         content = resp.text
 
@@ -79,7 +84,7 @@ if __name__ == '__main__':
     response2 = api_request(
         method="GET",
         url="https://restapi.amap.com/v5/place/text",
-        params={"keywords": "北京"},  # 查询参数
+        params={"keywords": "雍和宫"},  # 查询参数
         api_key="77b5f0d102c848d443b791fd469b732d",  # 作为查询参数传递 API 密钥
     )
     print(response.content)
