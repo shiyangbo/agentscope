@@ -893,6 +893,10 @@ class StartNode(WorkflowNode):
         # opt_kwargs 包含用户定义的节点输入输出变量
 
     def __call__(self, *args, **kwargs):
+        for k, v in kwargs:
+            if k not in self.output_data:
+                continue
+            self.output_data[k] = v
         return self.output_data
 
     def compile(self) -> dict:
