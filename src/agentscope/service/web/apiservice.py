@@ -10,6 +10,7 @@ def api_request(
         method: str,
         url: str,
         auth: Optional[str] = None,
+        api_key: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         json: Optional[Dict[str, Any]] = None,
@@ -17,25 +18,31 @@ def api_request(
         **kwargs: Any,
 ) -> ServiceResponse:
     """
-    Sends an API request and returns the response.
+    发送API请求并返回响应。
 
-    Args:
-        method (`str`): The HTTP method to use (e.g., 'GET', 'POST').
-        url (`str`): The URL for the request.
-        auth (`Optional[str]`): The API key or token to be used in the Authorization header.
-        params (`Optional[Dict[str, Any]]`): Query parameters for the request.
-        data (`Optional[Dict[str, Any]]`): Form data to send in the body of the request.
-        json (`Optional[Dict[str, Any]]`): JSON data to send in the body of the request.
-        headers (`Optional[Dict[str, Any]]`): Headers to include in the request.
-        **kwargs (`Any`): Additional keyword arguments passed to the request.
+    Args：
+    method（`str`）：要使用的HTTP方法（例如，'GET'、'POST'）。
+    url（`str`）：请求的url。
+    auth（`Optional[str]`）：要在授权标头中使用的API密钥或令牌。
+    api_key（`Optional[str]`）：要在参数中使用的api键。
+    params（`Optional[Dict[str，Any]]`）：查询请求的参数。
+    data（`Optional[Dict[str，Any]]`）：在请求正文中发送表单数据。
+    json（`Optional[Dict[str，Any]]`）：在请求正文中发送的json数据。
+    headers（`Optional[Dict[str，Any]]`）：请求中要包含的标头。
+    **kwargs（`Any`）：传递给请求的其他关键字参数。
 
-    Returns:
-        `ServiceResponse`: A response object with `status` and `content`.
+    退货：
+    `ServiceResponse：一个具有“状态”和“内容”的响应对象。
     """
     if headers is None:
         headers = {}
     if auth:
         headers['Authorization'] = auth
+
+    if params is None:
+        params = {}
+    if api_key:
+        params['key'] = api_key
 
     try:
         resp = requests.request(
@@ -68,4 +75,12 @@ if __name__ == '__main__':
         method="GET",
         url="https://api.uomg.com/api/rand.qinghua?format=json",
     )
+    # 通用 API 调用示例
+    response2 = api_request(
+        method="GET",
+        url="https://restapi.amap.com/v5/place/text",
+        params={"keywords": "北京"},  # 查询参数
+        api_key="77b5f0d102c848d443b791fd469b732d",  # 作为查询参数传递 API 密钥
+    )
     print(response.content)
+    print(response2.content)
