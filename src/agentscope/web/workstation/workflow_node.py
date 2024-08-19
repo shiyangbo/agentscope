@@ -859,14 +859,8 @@ class WriteTextServiceNode(WorkflowNode):
 # 开始节点实际上是定义全局变量的，此外别无操作，那么可以参考massage_hub节点实现
 class StartNode(WorkflowNode):
     """
-<<<<<<< Updated upstream
-    新增的开始节点用于接收和存储用户输入的变量为全局变量.
-    opt_kwargs输入dict
-    比如用户定义了该节点的输入和输出变量名、类型、value
-=======
     开始节点代表输入参数列表.
     source_kwargs字段，用户定义了该节点的输入和输出变量名、类型、value
->>>>>>> Stashed changes
 
         "inputs": [],
         "outputs": [
@@ -884,7 +878,6 @@ class StartNode(WorkflowNode):
         ],
         "settings": {}
 
-
     """
 
     node_type = WorkflowNodeType.START
@@ -892,12 +885,14 @@ class StartNode(WorkflowNode):
     def __init__(
             self,
             node_id: str,
-            params_json_str: str
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            node_definition_json: str = None,
     ) -> None:
         super().__init__(node_id, {}, {}, [])
         # source_kwargs 包含用户定义的节点输入输出变量
-        # 开始节点没有输入，只有输出
-        self.params_json_str = params_json_str
+        self.node_definition_json = node_definition_json
 
     def __call__(self, *args, **kwargs):
         return self.output_data
@@ -905,16 +900,32 @@ class StartNode(WorkflowNode):
     def compile(self) -> dict:
         # 入参的在这里初始化
         # {
-        #     "inputs": [...],
-        #     "outputs": [...],
-        #     "settings": {...}
+        #     "id": "4daf0d1a33af497e9819fe515133eb5f",
+        #     "name": "\u5f00\u59cb",
+        #     "type": "start",
+        #     "data": {
+        #         "inputs": [],
+        #         "outputs": [],
+        #         "settings": {}
+        #     }
         # }
+        # 检查参数格式是否正确
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start node parser")
+        node_spec_dict = parse_json_to_dict(self.node_definition_json)
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, node parser result: {node_spec_dict}")
+
+        if 'id' not in node_spec_dict:
+            raise Exception("id key not found")
+        if 'name' not in node_spec_dict:
+            raise Exception("name key not found")
+        if 'type' not in node_spec_dict:
+            raise Exception("type key not found")
+        if 'data' not in node_spec_dict:
+            raise Exception("data key not found")
+
+        params_dict = node_spec_dict['data']
         global params_pool
         params_pool.setdefault(self.node_id, {})
-
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start param parser")
-        params_dict = parse_json_to_dict(self.params_json_str)
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, params: {params_dict}")
 
         # 检查参数格式是否正确
         if 'inputs' not in params_dict:
@@ -931,6 +942,7 @@ class StartNode(WorkflowNode):
         if not isinstance(params_dict['settings'], dict):
             raise Exception(f"settings:{params_dict['settings']} type is not dict")
 
+        # 开始节点没有输入，只有输出
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_obj_dict 举例
             # {
@@ -953,6 +965,8 @@ class StartNode(WorkflowNode):
             # }
             param_one_dict = generate_python_param(param_spec, params_pool)
             params_pool[self.node_id] |= param_one_dict
+
+        self.output_data = params_pool[self.node_id]
 
         return {
             "imports": "",
