@@ -898,7 +898,7 @@ class StartNode(WorkflowNode):
         if not isinstance(args[0], dict):
             raise Exception("input param is not dict")
 
-        for k, v in args[0]:
+        for k, v in args[0].items():
             if k not in self.output_data:
                 continue
             self.output_data[k] = v
