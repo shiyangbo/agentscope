@@ -302,20 +302,11 @@ class ASDiGraph(nx.DiGraph):
         logger.debug(
             f"\nnode_id: {node_id}\nin_values:{x_in}",
         )
-        name = self.nodes[node_id]["name"]
-        logger.debug(
-            f"\nname: {node_id}\nname:{name}",
-        )
         opt = self.nodes[node_id]["opt"]
         logger.debug(
             f"\nnode_id: {node_id}\nopt:{opt}",
         )
-        if name == "StartNode":
-            # 这里添加校验还是接口获取data时校验?
-            # Start节点增加reply这里可以删除掉
-            out_values = x_in
-        else :
-            out_values = opt(x_in)
+        out_values = opt(x_in)
         logger.debug(
             f"\nnode_id: {node_id}\nout_values:{out_values}",
         )

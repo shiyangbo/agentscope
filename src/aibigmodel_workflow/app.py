@@ -44,6 +44,7 @@ from agentscope.constants import (
     FILE_COUNT_LIMIT,
 )
 
+
 def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     """Check and convert the type of the 'id' column in the specified table
     from INTEGER to VARCHAR.
@@ -226,6 +227,7 @@ def workflow_run() -> Response:
     content = request.json.get("data")
     script_path = request.json.get("path")
     # script_path 从 content 中提取, 需要数据库持久化
+    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
     config = load_config(script_path)
     dag = build_dag(config)
     # content中的data内容
@@ -235,9 +237,29 @@ def workflow_run() -> Response:
 
     return jsonify(result=result)
 
+@_app.route("/workflow-run-single", methods=["POST"])
+def workflow_run_single_node() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    script_path = request.json.get("path")
+    run_id = request.args.get("run-id")
+    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+    config = load_config(script_path)
+    # 使用node_id, 获取需要运行的node配置
+    single_node = {key: value for key, value in config.items() if key in run_id}
+    single_node_config = standardize_single_node_format(single_node)
+    dag = build_dag(single_node_config)
+    # content中的data内容
+    result = dag.run_with_param(content)
+
+    return jsonify(result=result)
+
 
 @_app.route("/workflow-save", methods=["POST"])
-def _save_workflow() -> Response:
+def workflow_save() -> Response:
     """
     Save the workflow JSON data to the local user folder.
     """
@@ -263,30 +285,6 @@ def _save_workflow() -> Response:
     except (json.JSONDecodeError, ValueError):
         return jsonify({"message": "Invalid workflow data"})
 
-    # workflow_json = json.dumps(workflow, ensure_ascii=False, indent=4)
-    # if len(workflow_json.encode("utf-8")) > FILE_SIZE_LIMIT:
-    #     return jsonify(
-    #         {
-    #             "message": f"The workflow file size exceeds "
-    #             f"{FILE_SIZE_LIMIT/(1024*1024)} MB limit",
-    #         },
-    #     )
-
-    # user_files = [
-    #     f
-    #     for f in os.listdir(user_dir)
-    #     if os.path.isfile(os.path.join(user_dir, f))
-    # ]
-
-    # if len(user_files) >= FILE_COUNT_LIMIT and not os.path.exists(filepath):
-    #     return jsonify(
-    #         {
-    #             "message": f"You have reached the limit of "
-    #             f"{FILE_COUNT_LIMIT} workflow files, please "
-    #             f"delete some files.",
-    #         },
-    #     )
-
     if overwrite:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(workflow, f, ensure_ascii=False, indent=4)
@@ -298,6 +296,34 @@ def _save_workflow() -> Response:
                 json.dump(workflow, f, ensure_ascii=False, indent=4)
 
     return jsonify({"message": "Workflow file saved successfully"})
+
+
+@_app.route("/workflow-get", methods=["POST"])
+def workflow_get() -> tuple[Response, int] | Response:
+    """
+    Reads and returns workflow data from the specified JSON file.
+    """
+    # user_login = session.get("user_login", "local_user")
+    user_dir = os.path.join(_cache_dir)
+    print(user_dir)
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir)
+
+    data = request.json
+    filename = data.get("filename")
+    if not filename:
+        return jsonify({"error": "Filename is required"}), 400
+
+    filepath = os.path.join(user_dir, filename)
+    print(filepath)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "File not found"}), 404
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        json_data = json.load(f)
+
+    return jsonify(json_data)
+
 
 def front_dict_format_convert(origin_dict: dict) -> dict:
     converted_dict = {}
@@ -327,15 +353,28 @@ def front_dict_format_convert(origin_dict: dict) -> dict:
         for edge in edges:
             if edge["source_node_id"] == node_id:
                 converted_dict[node_id]["outputs"]["output_1"]["connections"].append(
-                    {'node': edge["source_node_id"], 'output': "input_1"}
+                    {'node': edge["target_node_id"], 'output': "input_1"}
                 )
             elif edge["target_node_id"] == node_id:
                 converted_dict[node_id]["inputs"]["input_1"]["connections"].append(
-                    {'node': edge["target_node_id"], 'input': "output_1"}
+                    {'node': edge["source_node_id"], 'input': "output_1"}
                 )
 
     return converted_dict
 
+
+def standardize_single_node_format(data: dict) -> dict:
+    for value in data.values():
+        print(value)
+        for field in ['inputs', 'outputs']:
+            print(value[field])
+            # 如果字段是一个字典，且'connections'键存在于字典中
+            if 'input_1' in value[field]:
+                # 将'connections'字典设置为[]
+                value[field]['input_1']['connections'] = []
+            elif 'output_1' in value[field]:
+                value[field]['output_1']['connections'] = []
+    return data
 
 def init(
         host: str = "127.0.0.1",
