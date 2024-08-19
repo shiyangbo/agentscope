@@ -888,11 +888,9 @@ class StartNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
-            node_definition_json: str = None,
     ) -> None:
-        super().__init__(node_id, {}, {}, [])
-        # source_kwargs 包含用户定义的节点输入输出变量
-        self.node_definition_json = node_definition_json
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        # opt_kwargs 包含用户定义的节点输入输出变量
 
     def __call__(self, *args, **kwargs):
         return self.output_data
@@ -900,32 +898,17 @@ class StartNode(WorkflowNode):
     def compile(self) -> dict:
         # 入参的在这里初始化
         # {
-        #     "id": "4daf0d1a33af497e9819fe515133eb5f",
-        #     "name": "\u5f00\u59cb",
-        #     "type": "start",
-        #     "data": {
-        #         "inputs": [],
-        #         "outputs": [],
-        #         "settings": {}
-        #     }
+        #     "inputs": [],
+        #     "outputs": [],
+        #     "settings": {}
         # }
         # 检查参数格式是否正确
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start node parser")
-        node_spec_dict = parse_json_to_dict(self.node_definition_json)
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, node parser result: {node_spec_dict}")
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start param parser")
+        logger.info(f"node type:{self.node_id}, name:{self.node_id}, param: {self.opt_kwargs}")
 
-        if 'id' not in node_spec_dict:
-            raise Exception("id key not found")
-        if 'name' not in node_spec_dict:
-            raise Exception("name key not found")
-        if 'type' not in node_spec_dict:
-            raise Exception("type key not found")
-        if 'data' not in node_spec_dict:
-            raise Exception("data key not found")
-
-        params_dict = node_spec_dict['data']
         global params_pool
         params_pool.setdefault(self.node_id, {})
+        params_dict = self.opt_kwargs
 
         # 检查参数格式是否正确
         if 'inputs' not in params_dict:

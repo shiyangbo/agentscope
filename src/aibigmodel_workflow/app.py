@@ -229,6 +229,7 @@ def workflow_run() -> Response:
     # script_path 从 content 中提取, 需要数据库持久化
     # 存入数据库的数据为前端格式，需要转换为后端可识别格式
     config = load_config(script_path)
+    config = front_dict_format_convert(config)
     dag = build_dag(config)
     # content中的data内容
     result = dag.run_with_param(content)

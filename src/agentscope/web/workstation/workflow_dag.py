@@ -265,7 +265,6 @@ class ASDiGraph(nx.DiGraph):
             opt_kwargs=node_info["data"].get("args", {}),
             source_kwargs=node_info["data"].get("source", {}),
             dep_opts=dep_opts,
-            node_definition_json=node_info["data"].get("node_spec", None),
         )
 
         # Add build compiled python code
