@@ -20,6 +20,7 @@ from flask import (
     jsonify,
     render_template,
     Response,
+    session,
     abort,
     send_file,
 )
@@ -36,6 +37,12 @@ _cache_dir = Path.home() / ".cache" / "agentscope-studio"
 _cache_db = _cache_dir / "agentscope.db"
 os.makedirs(str(_cache_dir), exist_ok=True)
 
+from agentscope.constants import (
+    _DEFAULT_SUBDIR_CODE,
+    _DEFAULT_SUBDIR_INVOKE,
+    FILE_SIZE_LIMIT,
+    FILE_COUNT_LIMIT,
+)
 
 def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     """Check and convert the type of the 'id' column in the specified table
@@ -217,8 +224,8 @@ def workflow_run() -> Response:
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
+    script_path = request.json.get("path")
     # script_path 从 content 中提取, 需要数据库持久化
-    script_path = "./test.json"
     config = load_config(script_path)
     dag = build_dag(config)
     # content中的data内容
@@ -228,6 +235,69 @@ def workflow_run() -> Response:
 
     return jsonify(result=result)
 
+
+@_app.route("/workflow-save", methods=["POST"])
+def _save_workflow() -> Response:
+    """
+    Save the workflow JSON data to the local user folder.
+    """
+    # user_login = session.get("user_login", "local_user")
+    user_dir = os.path.join(_cache_dir)
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir)
+
+    # request 参数获取
+    data = request.json
+    overwrite = data.get("overwrite", False)
+    filename = data.get("filename")
+    workflow_str = data.get("workflow")
+    if not filename:
+        return jsonify({"message": "Filename is required"})
+
+    filepath = os.path.join(user_dir, f"{filename}.json")
+
+    try:
+        workflow = json.loads(workflow_str)
+        if not isinstance(workflow, dict):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        return jsonify({"message": "Invalid workflow data"})
+
+    # workflow_json = json.dumps(workflow, ensure_ascii=False, indent=4)
+    # if len(workflow_json.encode("utf-8")) > FILE_SIZE_LIMIT:
+    #     return jsonify(
+    #         {
+    #             "message": f"The workflow file size exceeds "
+    #             f"{FILE_SIZE_LIMIT/(1024*1024)} MB limit",
+    #         },
+    #     )
+
+    # user_files = [
+    #     f
+    #     for f in os.listdir(user_dir)
+    #     if os.path.isfile(os.path.join(user_dir, f))
+    # ]
+
+    # if len(user_files) >= FILE_COUNT_LIMIT and not os.path.exists(filepath):
+    #     return jsonify(
+    #         {
+    #             "message": f"You have reached the limit of "
+    #             f"{FILE_COUNT_LIMIT} workflow files, please "
+    #             f"delete some files.",
+    #         },
+    #     )
+
+    if overwrite:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(workflow, f, ensure_ascii=False, indent=4)
+    else:
+        if os.path.exists(filepath):
+            return jsonify({"message": "Workflow file exists!"})
+        else:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(workflow, f, ensure_ascii=False, indent=4)
+
+    return jsonify({"message": "Workflow file saved successfully"})
 
 def front_dict_format_convert(origin_dict: dict) -> dict:
     converted_dict = {}
