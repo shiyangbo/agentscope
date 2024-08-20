@@ -305,7 +305,10 @@ class ASDiGraph(nx.DiGraph):
         logger.debug(
             f"\nnode_id: {node_id}\nopt:{opt}",
         )
-        out_values = opt(x_in)
+        if not x_in and not isinstance(x_in, dict):
+            raise Exception(f'x_in type:{type(x_in)} not dict')
+
+        out_values = opt(**x_in)
         logger.debug(
             f"\nnode_id: {node_id}\nout_values:{out_values}",
         )
