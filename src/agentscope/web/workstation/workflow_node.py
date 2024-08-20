@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Workflow node opt."""
+import copy
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import List, Optional
@@ -56,13 +57,13 @@ def parse_json_to_dict(extract_text: str) -> dict:
     except json.decoder.JSONDecodeError as e:
         raise e
 
-def generate_python_param(param_spec: dict, params_pool: dict) -> dict:
+def generate_python_param(param_spec: dict, readonly_copy_params_pool: dict) -> dict:
     paramName = param_spec['name']
 
     if param_spec['value']['type'] == 'ref':
         referenceNodeName = param_spec['value']['content']['ref_node_id']
         referenceParamName = param_spec['value']['content']['ref_var_name']
-        paramValue = params_pool[referenceNodeName][referenceParamName]
+        paramValue = readonly_copy_params_pool[referenceNodeName][referenceParamName]
         return {paramName: paramValue}
 
     return {paramName: param_spec['value']['content']}
@@ -890,28 +891,35 @@ class StartNode(WorkflowNode):
             dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        # opt_kwargs 包含用户定义的节点输入输出变量
+        # opt_kwargs 包含用户定义的节点输入变量
 
     def __call__(self, *args, **kwargs):
         if len(kwargs) == 0:
             raise Exception("input param dict kwargs empty")
 
+        global params_pool
         for k, v in kwargs.items():
             if k not in self.output_data:
                 continue
             self.output_data[k] = v
-        return self.output_data
+            params_pool[self.node_id][k] = v
+
+        logger.info(f"{self.var_name}, run success")
+        return {}
+
+    def __str__(self) -> str:
+        message = f"{self.var_name}, params: {self.output_data}"
+        return message
 
     def compile(self) -> dict:
-        # 入参的在这里初始化
-        # {
-        #     "inputs": [],
-        #     "outputs": [],
-        #     "settings": {}
-        # }
+        """
+        入参的在这里初始化.
+        Returns:
+
+        """
+
         # 检查参数格式是否正确
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, start param parser")
-        logger.info(f"node type:{self.node_id}, name:{self.node_id}, param: {self.opt_kwargs}")
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
 
         global params_pool
         params_pool.setdefault(self.node_id, {})
@@ -934,7 +942,7 @@ class StartNode(WorkflowNode):
 
         # 开始节点没有输入，只有输出
         for i, param_spec in enumerate(params_dict['outputs']):
-            # param_obj_dict 举例
+            # param_spec 举例
             # {
             #     "name": "apiKeywords",
             #     "type": "string",
@@ -953,7 +961,9 @@ class StartNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, params_pool)
+
+            readonly_copy_params_pool = copy.deepcopy(params_pool)
+            param_one_dict = generate_python_param(param_spec, readonly_copy_params_pool)
             params_pool[self.node_id] |= param_one_dict
 
         self.output_data = params_pool[self.node_id]
@@ -978,45 +988,72 @@ class EndNode(WorkflowNode):
                  dep_opts: list,
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        # source_kwargs contains the list of variable names to retrieve
-        self.inputs = opt_kwargs.get("inputs", [])
-        self.variable_names = [input_data["name"] for input_data in self.inputs]
-        self.input_data = {}
+        # opt_kwargs 包含用户定义的节点输入变量
 
-    def __call__(self, x: dict = None) -> dict:
-        result = {}
-        for var_name in self.variable_names:
-            if var_name in globals():
-                result[var_name] = globals()[var_name]
-            else:
-                result[var_name] = None
-        print("EndNode Output:", result)
+    def __call__(self, *args, **kwargs) -> dict:
+        logger.info(f"{self.var_name}, run success")
+        return self.input_data
 
-        return result
+    def __str__(self) -> str:
+        message = f"{self.var_name}, params: {self.input_data}"
+        return message
 
     def compile(self) -> dict:
-        # 生成执行的代码，并逐行输出每个变量的查找结果
-        inits = "\n".join(
-            [
-                f'print("Value for {var_name}: ", globals().get("{var_name}", None))'
-                for var_name in self.variable_names
-            ]
-        )
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
 
-        # 将找到的值存入 DEFAULT_FLOW_VAR 中
-        inits += "\n" + "\n".join(
-            [
-                f'{DEFAULT_FLOW_VAR}["{var_name}"] = globals().get("{var_name}", None)'
-                for var_name in self.variable_names
-            ]
-        )
+        global params_pool
+        params_pool.setdefault(self.node_id, {})
+        params_dict = self.opt_kwargs
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        # 结束节点没有输出，只有输入
+        for i, param_spec in enumerate(params_dict['inputs']):
+            # param_spec 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+
+            readonly_copy_params_pool = copy.deepcopy(params_pool)
+            param_one_dict = generate_python_param(param_spec, readonly_copy_params_pool)
+            params_pool[self.node_id] |= param_one_dict
+
+        self.input_data = params_pool[self.node_id]
 
         return {
             "imports": "",
-            "inits": inits,
+            "inits": "",
             "execs": "",
         }
-
 
 
 class PythonServiceUserTypingNode(WorkflowNode):

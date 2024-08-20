@@ -298,20 +298,12 @@ class ASDiGraph(nx.DiGraph):
         Returns:
             The output of the node's computation.
         """
-        logger.debug(
-            f"\nnode_id: {node_id}\nin_values:{x_in}",
-        )
         opt = self.nodes[node_id]["opt"]
-        logger.debug(
-            f"\nnode_id: {node_id}\nopt:{opt}",
-        )
+        logger.info(f"{node_id}, {opt}, x_in: {x_in}")
         if not x_in and not isinstance(x_in, dict):
             raise Exception(f'x_in type:{type(x_in)} not dict')
 
         out_values = opt(**x_in)
-        logger.debug(
-            f"\nnode_id: {node_id}\nout_values:{out_values}",
-        )
         return out_values
 
 
@@ -368,7 +360,7 @@ def build_dag(config: dict) -> ASDiGraph:
     dag = ASDiGraph()
 
     dag.config = config
-    dag.save("./test.json")
+    dag.save("./test_save.json")
     logger.info((f"config {config}"))
     for node_id, node_info in config.items():
         config[node_id] = sanitize_node_data(node_info)

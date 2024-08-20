@@ -2,6 +2,7 @@ import json
 import traceback
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.studio._app import _remove_file_paths
+from aibigmodel_workflow.app import front_dict_format_convert
 from typing import Tuple
 
 
@@ -150,6 +151,7 @@ def test_workflow_run():
     )
     script_path = "./test.json"
     config = load_config(script_path)
+    config = front_dict_format_convert(config)
     dict1 = {'poi': 123123}
     dag = build_dag(config)
     dag.run_with_param(dict1)
