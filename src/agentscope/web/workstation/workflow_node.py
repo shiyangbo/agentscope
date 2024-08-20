@@ -45,6 +45,7 @@ import json
 
 DEFAULT_FLOW_VAR = "flow"
 
+# 全局变量池
 params_pool = {}
 
 def parse_json_to_dict(extract_text: str) -> dict:
@@ -57,13 +58,13 @@ def parse_json_to_dict(extract_text: str) -> dict:
     except json.decoder.JSONDecodeError as e:
         raise e
 
-def generate_python_param(param_spec: dict, readonly_copy_params_pool: dict) -> dict:
+def generate_python_param(param_spec: dict, params_pool: dict) -> dict:
     paramName = param_spec['name']
 
     if param_spec['value']['type'] == 'ref':
         referenceNodeName = param_spec['value']['content']['ref_node_id']
         referenceParamName = param_spec['value']['content']['ref_var_name']
-        paramValue = readonly_copy_params_pool[referenceNodeName][referenceParamName]
+        paramValue = params_pool[referenceNodeName][referenceParamName]
         return {paramName: paramValue}
 
     return {paramName: param_spec['value']['content']}
@@ -892,55 +893,17 @@ class StartNode(WorkflowNode):
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
+        self.params = None
 
     def __call__(self, *args, **kwargs):
         if len(kwargs) == 0:
             raise Exception("input param dict kwargs empty")
 
-        global params_pool
-        for k, v in kwargs.items():
-            if k not in self.output_data:
-                continue
-            self.output_data[k] = v
-            params_pool[self.node_id][k] = v
-
-        logger.info(f"{self.var_name}, run success")
-        return {}
-
-    def __str__(self) -> str:
-        message = f"{self.var_name}, params: {self.output_data}"
-        return message
-
-    def compile(self) -> dict:
-        """
-        入参的在这里初始化.
-        Returns:
-
-        """
-
-        # 检查参数格式是否正确
-        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
-
+        # 1. 建立参数映射
         global params_pool
         params_pool.setdefault(self.node_id, {})
+
         params_dict = self.opt_kwargs
-
-        # 检查参数格式是否正确
-        if 'inputs' not in params_dict:
-            raise Exception("inputs key not found")
-        if 'outputs' not in params_dict:
-            raise Exception("outputs key not found")
-        if 'settings' not in params_dict:
-            raise Exception("settings key not found")
-
-        if not isinstance(params_dict['inputs'], list):
-            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
-        if not isinstance(params_dict['outputs'], list):
-            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
-        if not isinstance(params_dict['settings'], dict):
-            raise Exception(f"settings:{params_dict['settings']} type is not dict")
-
-        # 开始节点没有输入，只有输出
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
             # {
@@ -962,11 +925,44 @@ class StartNode(WorkflowNode):
             #     }
             # }
 
-            readonly_copy_params_pool = copy.deepcopy(params_pool)
-            param_one_dict = generate_python_param(param_spec, readonly_copy_params_pool)
+            param_one_dict = generate_python_param(param_spec, params_pool)
             params_pool[self.node_id] |= param_one_dict
 
-        self.output_data = params_pool[self.node_id]
+        # 2. 解析实际的取值
+        for k, v in kwargs.items():
+            if k not in params_pool[self.node_id]:
+                continue
+            params_pool[self.node_id][k] = v
+
+        self.params = params_pool[self.node_id]
+        logger.info(f"{self.var_name}, run success, params: {self.params}")
+        return {}
+
+    def __str__(self) -> str:
+        message = f"{self.var_name}, params: {self.params}"
+        return message
+
+    def compile(self) -> dict:
+        """
+        入参在这里初始化.
+        Returns:
+
+        """
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        if 'inputs' not in self.opt_kwargs:
+            raise Exception("inputs key not found")
+        if 'outputs' not in self.opt_kwargs:
+            raise Exception("outputs key not found")
+        if 'settings' not in self.opt_kwargs:
+            raise Exception("settings key not found")
+
+        if not isinstance(self.opt_kwargs['inputs'], list):
+            raise Exception(f"inputs:{self.opt_kwargs['inputs']} type is not list")
+        if not isinstance(self.opt_kwargs['outputs'], list):
+            raise Exception(f"outputs:{self.opt_kwargs['outputs']} type is not list")
+        if not isinstance(self.opt_kwargs['settings'], dict):
+            raise Exception(f"settings:{self.opt_kwargs['settings']} type is not dict")
 
         return {
             "imports": "",
@@ -989,39 +985,13 @@ class EndNode(WorkflowNode):
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
+        self.params = None
 
     def __call__(self, *args, **kwargs) -> dict:
-        logger.info(f"{self.var_name}, run success")
-        return self.input_data
-
-    def __str__(self) -> str:
-        message = f"{self.var_name}, params: {self.input_data}"
-        return message
-
-    def compile(self) -> dict:
-        # 检查参数格式是否正确
-        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
-
         global params_pool
         params_pool.setdefault(self.node_id, {})
+
         params_dict = self.opt_kwargs
-
-        # 检查参数格式是否正确
-        if 'inputs' not in params_dict:
-            raise Exception("inputs key not found")
-        if 'outputs' not in params_dict:
-            raise Exception("outputs key not found")
-        if 'settings' not in params_dict:
-            raise Exception("settings key not found")
-
-        if not isinstance(params_dict['inputs'], list):
-            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
-        if not isinstance(params_dict['outputs'], list):
-            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
-        if not isinstance(params_dict['settings'], dict):
-            raise Exception(f"settings:{params_dict['settings']} type is not dict")
-
-        # 结束节点没有输出，只有输入
         for i, param_spec in enumerate(params_dict['inputs']):
             # param_spec 举例
             # {
@@ -1043,11 +1013,36 @@ class EndNode(WorkflowNode):
             #     }
             # }
 
-            readonly_copy_params_pool = copy.deepcopy(params_pool)
-            param_one_dict = generate_python_param(param_spec, readonly_copy_params_pool)
+            param_one_dict = generate_python_param(param_spec, params_pool)
             params_pool[self.node_id] |= param_one_dict
 
-        self.input_data = params_pool[self.node_id]
+        self.params = params_pool[self.node_id]
+        logger.info(f"{self.var_name}, run success, params: {self.params}")
+        return params_pool[self.node_id]
+
+    def __str__(self) -> str:
+        message = f"{self.var_name}, params: {self.params}"
+        return message
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
 
         return {
             "imports": "",
