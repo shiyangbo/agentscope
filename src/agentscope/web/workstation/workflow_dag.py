@@ -119,7 +119,7 @@ class ASDiGraph(nx.DiGraph):
             else:
                 raise ValueError("Too many predecessors!")
 
-    def run_with_param(self, input_param: dict) -> Any:
+    def run_with_param(self, input_param: dict, config: dict) -> (Any, dict) :
         """
         Execute the computations associated with each node in the graph.
 
@@ -134,26 +134,35 @@ class ASDiGraph(nx.DiGraph):
             for node_id in sorted_nodes
             if node_id not in self.nodes_not_in_graph
         ]
+        logger.info(f"input_param: {input_param}")
         logger.info(f"sorted_nodes: {sorted_nodes}")
         logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
 
         # Cache output
-        values = {}
-
+        output_values = {}
+        # Cahce input
+        input_values = {}
         # Run with predecessors outputs
         for node_id in sorted_nodes:
             inputs = [
-                values[predecessor]
+                output_values[predecessor]
                 for predecessor in self.predecessors(node_id)
             ]
             if not inputs:
-                values[node_id] = self.exec_node(node_id, input_param)
+                input_values[node_id] = input_param
+                output_values[node_id] = self.exec_node(node_id, input_param)
             elif len(inputs) == 1:
-                values[node_id] = self.exec_node(node_id, inputs[0])
+                input_values[node_id] = inputs[0]
+                output_values[node_id] = self.exec_node(node_id, inputs[0])
             else:
                 raise ValueError("Too many predecessors!")
-
-        return values[sorted_nodes[-1]]
+        logger.info(f"output_values: {output_values}")
+        logger.info(f"intput_values: {input_values}")
+        # 初始化节点运行结果并更新
+        nodes_result = set_initial_nodes_result(config)
+        updated_nodes_result = update_nodes_with_values(nodes_result, output_values, input_values)
+        logger.info(f"updated_nodes_result: {updated_nodes_result}")
+        return output_values[sorted_nodes[-1]], updated_nodes_result
     def compile(  # type: ignore[no-untyped-def]
         self,
         compiled_filename: str = "",
@@ -302,7 +311,6 @@ class ASDiGraph(nx.DiGraph):
         logger.info(f"{node_id}, {opt}, x_in: {x_in}")
         if not x_in and not isinstance(x_in, dict):
             raise Exception(f'x_in type:{type(x_in)} not dict')
-
         out_values = opt(**x_in)
         return out_values
 
@@ -398,3 +406,29 @@ def build_dag(config: dict) -> ASDiGraph:
         raise ValueError("The provided configuration does not form a DAG.")
 
     return dag
+
+def set_initial_nodes_result(config: dict) -> list:
+    nodes = config.get("nodes", [])
+    node_result = []
+    for node in nodes:
+        node_result_dict = {
+            "node_id": node["id"],
+            "node_status": "",
+            "node_type": node["type"],
+            "inputs": {},
+            "outputs": {},
+            "node_execute_cost": ""
+        }
+        node_result.append(node_result_dict)
+    return node_result
+
+def update_nodes_with_values(nodes, output_values, input_values):
+    for node in nodes:
+        node_id = node['node_id']
+        node_type = node['node_type']
+        node['outputs'] = output_values.get(node_id, {})
+        if node_type == "StartNode":
+            node['outputs'] = input_values.get(node_id, {})
+        else:
+            node['inputs'] = input_values.get(node_id, {})
+    return nodes
