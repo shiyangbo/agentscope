@@ -856,7 +856,6 @@ class WriteTextServiceNode(WorkflowNode):
 
 # 20240813
 # 新增的开始节点
-# 开始节点实际上是定义全局变量的，此外别无操作，那么可以参考massage_hub节点实现
 class StartNode(WorkflowNode):
     """
     开始节点代表输入参数列表.
@@ -1020,7 +1019,6 @@ class EndNode(WorkflowNode):
         }
 
 
-
 class PythonServiceUserTypingNode(WorkflowNode):
     """
     Execute Python Node,支持用户输入
@@ -1068,7 +1066,8 @@ class PythonServiceUserTypingNode(WorkflowNode):
         }
 
 
-# 新增通用api调用节点，目前还不能使用需要输入auth key的api
+# 新增通用api调用节点
+# api请求的所需参数从setting中获取
 class ApiServiceNode(WorkflowNode):
     """
     API Service Node for executing HTTP requests using the api_request function.
@@ -1084,13 +1083,37 @@ class ApiServiceNode(WorkflowNode):
             dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        # 将 api_request 函数与 opt_kwargs 参数一起传递给 ServiceToolkit
-        self.service_func = ServiceToolkit.get(
-            api_request,
-            **self.opt_kwargs,
-        )
+        self.req = None  # 初始化时将 self.requ 设为 None
 
     def compile(self) -> dict:
+        params_dict = self.opt_kwargs
+
+        # 校验必需的键是否存在，并验证它们的数据类型
+        required_keys = {
+            'inputs': list,
+            'outputs': list,
+            'settings': dict,
+        }
+
+        for key, expected_type in required_keys.items():
+            if key not in params_dict:
+                raise ValueError(f"'{key}' key not found in opt_kwargs")
+            if not isinstance(params_dict[key], expected_type):
+                raise TypeError(f"'{key}': {params_dict[key]} is not of type {expected_type.__name__}")
+
+        request_settings = params_dict['settings']
+
+        # 使用 api_request 函数进行 API 请求设置
+        self.req = api_request(
+            url=request_settings.get('url'),
+            method=request_settings.get('method'),
+            auth=request_settings.get('auth'),
+            api_key=request_settings.get('api_key'),
+            params={input_item['name']: input_item['value'] for input_item in params_dict['inputs']},
+            headers={header['name']: header['value'] for header in request_settings.get('headers', [])},
+            **request_settings.get('extra', {})
+        )
+
         return {
             "imports": "",
             "inits": "",
@@ -1099,7 +1122,9 @@ class ApiServiceNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs):
         # 执行服务函数并返回结果
-        return self.service_func
+        if self.req is None:
+            raise RuntimeError("API request has not been compiled yet.")
+        return self.req
 
 
 NODE_NAME_MAPPING = {

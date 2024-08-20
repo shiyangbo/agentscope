@@ -154,6 +154,7 @@ class ASDiGraph(nx.DiGraph):
                 raise ValueError("Too many predecessors!")
 
         return values[sorted_nodes[-1]]
+    
     def compile(  # type: ignore[no-untyped-def]
         self,
         compiled_filename: str = "",
