@@ -58,13 +58,13 @@ def parse_json_to_dict(extract_text: str) -> dict:
     except json.decoder.JSONDecodeError as e:
         raise e
 
-def generate_python_param(param_spec: dict, params_pool: dict) -> dict:
+def generate_python_param(param_spec: dict, params_pool_for_dag: dict) -> dict:
     paramName = param_spec['name']
 
     if param_spec['value']['type'] == 'ref':
         referenceNodeName = param_spec['value']['content']['ref_node_id']
         referenceParamName = param_spec['value']['content']['ref_var_name']
-        paramValue = params_pool[referenceNodeName][referenceParamName]
+        paramValue = params_pool_for_dag[referenceNodeName][referenceParamName]
         return {paramName: paramValue}
 
     return {paramName: param_spec['value']['content']}
@@ -890,10 +890,12 @@ class StartNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
+            dag_id: Optional[str] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
         self.params = None
+        self.dag_id = dag_id
 
     def __call__(self, *args, **kwargs):
         if len(kwargs) == 0:
@@ -901,7 +903,8 @@ class StartNode(WorkflowNode):
 
         # 1. 建立参数映射
         global params_pool
-        params_pool.setdefault(self.node_id, {})
+        params_pool.setdefault(self.dag_id, {})
+        params_pool[self.dag_id].setdefault(self.node_id, {})
 
         params_dict = self.opt_kwargs
         for i, param_spec in enumerate(params_dict['outputs']):
@@ -925,21 +928,21 @@ class StartNode(WorkflowNode):
             #     }
             # }
 
-            param_one_dict = generate_python_param(param_spec, params_pool)
-            params_pool[self.node_id] |= param_one_dict
+            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            params_pool[self.dag_id][self.node_id] |= param_one_dict
 
         # 2. 解析实际的取值
         for k, v in kwargs.items():
-            if k not in params_pool[self.node_id]:
+            if k not in params_pool[self.dag_id][self.node_id]:
                 continue
-            params_pool[self.node_id][k] = v
+            params_pool[self.dag_id][self.node_id][k] = v
 
-        self.params = params_pool[self.node_id]
+        self.params = params_pool[self.dag_id][self.node_id]
         logger.info(f"{self.var_name}, run success, params: {self.params}")
         return {}
 
     def __str__(self) -> str:
-        message = f"{self.var_name}, params: {self.params}"
+        message = f'dag: {self.dag_id}, {self.var_name}, params: {self.params}'
         return message
 
     def compile(self) -> dict:
@@ -982,14 +985,16 @@ class EndNode(WorkflowNode):
                  opt_kwargs: dict,
                  source_kwargs: dict,
                  dep_opts: list,
+                 dag_id: Optional[str] = None,
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
         self.params = None
+        self.dag_id = dag_id
 
     def __call__(self, *args, **kwargs) -> dict:
         global params_pool
-        params_pool.setdefault(self.node_id, {})
+        params_pool[self.dag_id].setdefault(self.node_id, {})
 
         params_dict = self.opt_kwargs
         for i, param_spec in enumerate(params_dict['inputs']):
@@ -1013,15 +1018,15 @@ class EndNode(WorkflowNode):
             #     }
             # }
 
-            param_one_dict = generate_python_param(param_spec, params_pool)
-            params_pool[self.node_id] |= param_one_dict
+            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            params_pool[self.dag_id][self.node_id] |= param_one_dict
 
-        self.params = params_pool[self.node_id]
+        self.params = params_pool[self.dag_id][self.node_id]
         logger.info(f"{self.var_name}, run success, params: {self.params}")
-        return params_pool[self.node_id]
+        return params_pool[self.dag_id][self.node_id]
 
     def __str__(self) -> str:
-        message = f"{self.var_name}, params: {self.params}"
+        message = f'dag: {self.dag_id}, {self.var_name}, params: {self.params}'
         return message
 
     def compile(self) -> dict:

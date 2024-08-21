@@ -10,6 +10,7 @@ import copy
 import json
 from typing import Any
 from loguru import logger
+import uuid
 
 import agentscope
 from agentscope.web.workstation.workflow_node import (
@@ -73,6 +74,8 @@ class ASDiGraph(nx.DiGraph):
 
         self.execs = ["\n"]
         self.config = {}
+        kwargs.setdefault('uuid', None)
+        self.uuid = kwargs['uuid']
 
     def save(self, save_filepath: str = "",) -> None:
         if len(self.config) > 0:
@@ -274,6 +277,7 @@ class ASDiGraph(nx.DiGraph):
             opt_kwargs=node_info["data"].get("args", {}),
             source_kwargs=node_info["data"].get("source", {}),
             dep_opts=dep_opts,
+            dag_id=self.uuid,
         )
 
         # Add build compiled python code
@@ -365,7 +369,7 @@ def build_dag(config: dict) -> ASDiGraph:
     Raises:
         ValueError: If the resulting graph is not acyclic.
     """
-    dag = ASDiGraph()
+    dag = ASDiGraph(**{'uuid': str(uuid.uuid4())})
 
     dag.config = config
     dag.save("./test_save.json")

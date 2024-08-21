@@ -155,6 +155,11 @@ def test_workflow_run():
     dict1 = {'poi': 123123}
     dag = build_dag(config)
     dag.run_with_param(dict1)
+    # TODO, 释放全局变量池里的内存空间
+    import agentscope.web.workstation.workflow_node as wn_module
+    print(wn_module.params_pool)
+    del wn_module.params_pool[dag.uuid]
+    print(wn_module.params_pool)
 
 
 def test_parse_json_to_dict():
