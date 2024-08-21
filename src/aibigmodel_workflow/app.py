@@ -13,6 +13,8 @@ from pathlib import Path
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.web.workstation.workflow import load_config
 from agentscope._runtime import _runtime
+from agentscope.utils.tools import _is_process_alive, _is_windows
+from agentscope.studio._app import _db
 
 from flask import (
     Flask,
@@ -37,13 +39,19 @@ _cache_dir = Path.home() / ".cache" / "agentscope-studio"
 _cache_db = _cache_dir / "agentscope.db"
 os.makedirs(str(_cache_dir), exist_ok=True)
 
+if _is_windows():
+    _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{str(_cache_db)}"
+else:
+    _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:////{str(_cache_db)}"
+
+# _db = SQLAlchemy(_app)
+
 from agentscope.constants import (
     _DEFAULT_SUBDIR_CODE,
     _DEFAULT_SUBDIR_INVOKE,
     FILE_SIZE_LIMIT,
     FILE_COUNT_LIMIT,
 )
-
 
 def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     """Check and convert the type of the 'id' column in the specified table
@@ -217,7 +225,7 @@ def _convert_config_to_py_and_run() -> Response:
             )
     return jsonify(py_code=py_code, is_success=status, run_id=run_id)
 
-
+# 已经发布的workflow直接运行
 @_app.route("/workflow-run", methods=["POST"])
 def workflow_run() -> Response:
     """
@@ -226,17 +234,22 @@ def workflow_run() -> Response:
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
     script_path = request.json.get("path")
+    execute_id = _runtime.generate_new_runtime_id()
+
     # script_path 从 content 中提取, 需要数据库持久化
     # 存入数据库的数据为前端格式，需要转换为后端可识别格式
     config = load_config(script_path)
-    config = front_dict_format_convert(config)
-    dag = build_dag(config)
-    # content中的data内容
-    result = dag.run_with_param(content)
-    # 两种方案，一种是在run_with_param后直接返回结果，这里可能需要Python节点or其他节点有对应的出入参处理逻辑
-    # 第二种为实现Python or其他节点的complie逻辑，之后将原本config文件内入参替换，替换后转换为python code执行，返回python执行结果
+    logger.info(f"config: {config}")
 
-    return jsonify(result=result)
+    converted_config = workflow_format_convert(config)
+    dag = build_dag(converted_config)
+    # content中的data内容
+    result, nodes_result = dag.run_with_param(content,config)
+    # 获取workflow与各节点的执行结果
+    execute_result = get_workflow_running_result(nodes_result, execute_id, "success", "12312312")
+    # 需要持久化
+    logger.info(f"execute_result: {execute_result}")
+    return jsonify(result=result, execute_id=execute_id)
 
 @_app.route("/workflow-run-single", methods=["POST"])
 def workflow_run_single_node() -> Response:
@@ -246,17 +259,44 @@ def workflow_run_single_node() -> Response:
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
     script_path = request.json.get("path")
-    run_id = request.args.get("run-id")
+    execute_id = _runtime.generate_new_runtime_id()
+    node_id = request.args.get("node-id")
     # 存入数据库的数据为前端格式，需要转换为后端可识别格式
     config = load_config(script_path)
     # 使用node_id, 获取需要运行的node配置
-    single_node = {key: value for key, value in config.items() if key in run_id}
+    single_node = {key: value for key, value in config.items() if key in node_id}
     single_node_config = standardize_single_node_format(single_node)
     dag = build_dag(single_node_config)
     # content中的data内容
     result = dag.run_with_param(content)
 
-    return jsonify(result=result)
+    return jsonify(result=result, execute_id=execute_id)
+
+# 画布中的workflow，调试运行
+@_app.route("/workflow-run-v2", methods=["POST"])
+def workflow_run_v2() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    workflow_schema = request.json.get("workflow_schema")
+    execute_id = _runtime.generate_new_runtime_id()
+    # script_path 从 content 中提取, 需要数据库持久化
+    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+    config = workflow_format_convert(workflow_schema)
+    logger.info(f"config: {config}")
+
+    converted_config = workflow_format_convert(config)
+    dag = build_dag(converted_config)
+    # content中的data内容
+    result, nodes_result = dag.run_with_param(content,config)
+    # 获取workflow与各节点的执行结果
+    execute_result = get_workflow_running_result(nodes_result, execute_id, "success", "12312312")
+    # 需要持久化
+    logger.info(f"execute_result: {execute_result}")
+
+    return jsonify(result=result, execute_id=execute_id)
 
 
 @_app.route("/workflow-save", methods=["POST"])
@@ -271,7 +311,6 @@ def workflow_save() -> Response:
 
     # request 参数获取
     data = request.json
-    overwrite = data.get("overwrite", False)
     filename = data.get("filename")
     workflow_str = data.get("workflow")
     if not filename:
@@ -286,15 +325,11 @@ def workflow_save() -> Response:
     except (json.JSONDecodeError, ValueError):
         return jsonify({"message": "Invalid workflow data"})
 
-    if overwrite:
+    if os.path.exists(filepath):
+        return jsonify({"message": "Workflow file exists!"})
+    else:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(workflow, f, ensure_ascii=False, indent=4)
-    else:
-        if os.path.exists(filepath):
-            return jsonify({"message": "Workflow file exists!"})
-        else:
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(workflow, f, ensure_ascii=False, indent=4)
 
     return jsonify({"message": "Workflow file saved successfully"})
 
@@ -326,7 +361,7 @@ def workflow_get() -> tuple[Response, int] | Response:
     return jsonify(json_data)
 
 
-def front_dict_format_convert(origin_dict: dict) -> dict:
+def workflow_format_convert(origin_dict: dict) -> dict:
     converted_dict = {}
     nodes = origin_dict.get("nodes", [])
     edges = origin_dict.get("edges", [])
@@ -363,6 +398,14 @@ def front_dict_format_convert(origin_dict: dict) -> dict:
 
     return converted_dict
 
+def get_workflow_running_result(nodes_result: list, execute_id: str, execute_status: str, execute_cost: str) -> dict:
+    execute_result = {
+        "execute_id": execute_id,
+        "execute_status": execute_status,
+        "execute_cost": execute_cost,
+        "node_result": nodes_result
+    }
+    return execute_result
 
 def standardize_single_node_format(data: dict) -> dict:
     for value in data.values():
