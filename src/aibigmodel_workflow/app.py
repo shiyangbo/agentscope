@@ -4,17 +4,21 @@ import json
 import os
 import re
 import subprocess
+import time
 import tempfile
 import threading
 import traceback
 from datetime import datetime
 from typing import Tuple, Union, Any, Optional
 from pathlib import Path
+
+from sqlalchemy.exc import SQLAlchemyError
+
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.web.workstation.workflow import load_config
 from agentscope._runtime import _runtime
 from agentscope.utils.tools import _is_process_alive, _is_windows
-from agentscope.studio._app import _db
+from sqlalchemy.dialects.postgresql import UUID
 
 from flask import (
     Flask,
@@ -31,11 +35,13 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, join_room, leave_room
 from loguru import logger
 import sqlite3
+import uuid
 
 _app = Flask(__name__)
 
 # Set the cache directory
 _cache_dir = Path.home() / ".cache" / "agentscope-studio"
+print(_cache_dir)
 _cache_db = _cache_dir / "agentscope.db"
 os.makedirs(str(_cache_dir), exist_ok=True)
 
@@ -44,14 +50,42 @@ if _is_windows():
 else:
     _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:////{str(_cache_db)}"
 
-# _db = SQLAlchemy(_app)
+_db = SQLAlchemy(_app)
 
-from agentscope.constants import (
-    _DEFAULT_SUBDIR_CODE,
-    _DEFAULT_SUBDIR_INVOKE,
-    FILE_SIZE_LIMIT,
-    FILE_COUNT_LIMIT,
-)
+_socketio = SocketIO(_app)
+
+# This will enable CORS for all route
+CORS(_app)
+
+_RUNS_DIRS = []
+
+
+class _ExecuteTable(_db.Model):  # type: ignore[name-defined]
+    """Execute workflow."""
+
+    execute_id = _db.Column(_db.String, primary_key=True)  # 运行ID
+    execute_result = _db.Column(_db.String)
+
+
+class _WorkflowTable(_db.Model):  # type: ignore[name-defined]
+    """Workflow store table."""
+
+    id = _db.Column(_db.String, primary_key=True)  # 用户ID
+    config_name = _db.Column(_db.String)
+    config_content = _db.Column(_db.String)
+
+
+class _PluginTable(_db.Model):  # type: ignore[name-defined]
+    """Plugin table."""
+
+    id = _db.Column(_db.String, primary_key=True)  # 用户ID
+    plugin_name = _db.Column(_db.String)  # 插件名称
+    model_name = _db.Column(_db.String)  # 插件英文名称
+    plugin_desc = _db.Column(_db.String)  # 插件描述
+    plugin_config = _db.Column(_db.String)  # 插件dag配置文件
+    plugin_field = _db.Column(_db.String)  # 插件领域
+    plugin_desc_config = _db.Column(_db.String)  # 插件描述配置文件
+
 
 def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
     """Check and convert the type of the 'id' column in the specified table
@@ -124,26 +158,6 @@ def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
         print(f"SQLite error: {e}")
     finally:
         conn.close()
-
-
-def _is_windows() -> bool:
-    """Check if the system is Windows."""
-    return os.name == "nt"
-
-
-if _is_windows():
-    _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{str(_cache_db)}"
-else:
-    _app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:////{str(_cache_db)}"
-
-_db = SQLAlchemy(_app)
-
-_socketio = SocketIO(_app)
-
-# This will enable CORS for all routes
-CORS(_app)
-
-_RUNS_DIRS = []
 
 
 def _remove_file_paths(error_trace: str) -> str:
@@ -225,87 +239,146 @@ def _convert_config_to_py_and_run() -> Response:
             )
     return jsonify(py_code=py_code, is_success=status, run_id=run_id)
 
+
+# 发布调试成功的workflow
+@_app.route("/plugin_publish", methods=["POST"])
+def plugin_publish() -> Response:
+    id = uuid.uuid4()
+    data = request.json.get("data")
+    print(type(data))
+    plugin_config = json.dumps(data["plugin_config"])
+    # 数据库存储
+    plugin_desc_config = plugin_desc_config_generator(data)
+    plugin_desc_config = json.dumps(plugin_desc_config)
+    try:
+        _db.session.add(
+            _PluginTable(
+                id=str(id),
+                plugin_name=data["plugin_name"],
+                model_name=data["model_name"],
+                plugin_desc=data["plugin_desc"],
+                plugin_config=plugin_config,
+                plugin_field=data["plugin_field"],
+                plugin_desc_config=plugin_desc_config
+            ),
+        )
+        _db.session.commit()
+    except SQLAlchemyError as e:
+        _db.session.rollback()
+        raise
+    # 调用agent智能体接口，将插件进行注册
+
+    return jsonify({"message": "Workflow file published successfully"})
+
+
 # 已经发布的workflow直接运行
-@_app.route("/workflow-run", methods=["POST"])
+@_app.route("/plugin_run", methods=["POST"])
+def plugin_run() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    plugin_name = request.json.get("plugin_name")
+    plugin = _PluginTable.query.filter_by(plugin_name=plugin_name).first()
+    if not plugin:
+        abort(400, f"plugin [{plugin_name}] not exists")
+    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+    config = json.loads(plugin.plugin_config)
+    converted_config = workflow_format_convert(config)
+    dag = build_dag(converted_config)
+    # 调用运行dag
+    start_time = time.time()
+    result, nodes_result = dag.run_with_param(content, config)
+    end_time = time.time()
+    executed_time = round(end_time - start_time, 3)
+    # 获取workflow与各节点的执行结果
+    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    execute_result = json.dumps(execute_result)
+    # 数据库存储
+    try:
+        _db.session.add(
+            _ExecuteTable(
+                execute_id=dag.uuid,
+                execute_result=execute_result,
+            ),
+        )
+        _db.session.commit()
+    except SQLAlchemyError as e:
+        _db.session.rollback()
+        raise e
+    logger.info(f"execute_result: {execute_result}")
+    return jsonify(result=result, execute_id=dag.uuid)
+
+
+@_app.route("/node_run", methods=["POST"])
+def node_run() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    node = request.json.get("node_schema")
+    # 使用node_id, 获取需要运行的node配置
+    node_config = node_format_convert(node)
+    dag = build_dag(node_config)
+    # content中的data内容
+    result, _ = dag.run_with_param(content, node_config)
+
+    return jsonify(result=result)
+
+
+# 画布中的workflow，调试运行
+@_app.route("/workflow_run", methods=["POST"])
 def workflow_run() -> Response:
     """
     Input query data and get response.
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    script_path = request.json.get("path")
-    execute_id = _runtime.generate_new_runtime_id()
-
-    # script_path 从 content 中提取, 需要数据库持久化
-    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-    config = load_config(script_path)
-    logger.info(f"config: {config}")
-
-    converted_config = workflow_format_convert(config)
-    dag = build_dag(converted_config)
-    # content中的data内容
-    result, nodes_result = dag.run_with_param(content,config)
-    # 获取workflow与各节点的执行结果
-    execute_result = get_workflow_running_result(nodes_result, execute_id, "success", "12312312")
-    # 需要持久化
-    logger.info(f"execute_result: {execute_result}")
-    return jsonify(result=result, execute_id=execute_id)
-
-@_app.route("/workflow-run-single", methods=["POST"])
-def workflow_run_single_node() -> Response:
-    """
-    Input query data and get response.
-    """
-    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    content = request.json.get("data")
-    script_path = request.json.get("path")
-    execute_id = _runtime.generate_new_runtime_id()
-    node_id = request.args.get("node-id")
-    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-    config = load_config(script_path)
-    # 使用node_id, 获取需要运行的node配置
-    single_node = {key: value for key, value in config.items() if key in node_id}
-    single_node_config = standardize_single_node_format(single_node)
-    dag = build_dag(single_node_config)
-    # content中的data内容
-    result = dag.run_with_param(content)
-
-    return jsonify(result=result, execute_id=execute_id)
-
-# 画布中的workflow，调试运行
-@_app.route("/workflow-run-v2", methods=["POST"])
-def workflow_run_v2() -> Response:
-    """
-    Input query data and get response.
-    """
-    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    content = request.json.get("data")
     workflow_schema = request.json.get("workflow_schema")
-    execute_id = _runtime.generate_new_runtime_id()
-    # script_path 从 content 中提取, 需要数据库持久化
+    logger.info(f"workflow_schema: {workflow_schema}")
     # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-    config = workflow_format_convert(workflow_schema)
-    logger.info(f"config: {config}")
-
-    converted_config = workflow_format_convert(config)
+    converted_config = workflow_format_convert(workflow_schema)
+    logger.info(f"config: {converted_config}")
     dag = build_dag(converted_config)
-    # content中的data内容
-    result, nodes_result = dag.run_with_param(content,config)
+
+    start_time = time.time()
+    result, nodes_result = dag.run_with_param(content, workflow_schema)
+    end_time = time.time()
+    executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
-    execute_result = get_workflow_running_result(nodes_result, execute_id, "success", "12312312")
+    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     # 需要持久化
     logger.info(f"execute_result: {execute_result}")
+    execute_result = json.dumps(execute_result)
+    # 数据库存储
+    try:
+        _db.session.add(
+            _ExecuteTable(
+                execute_id=dag.uuid,
+                execute_result=execute_result,
+            ),
+        )
+        _db.session.commit()
+    except SQLAlchemyError as e:
+        _db.session.rollback()
+        raise e
 
-    return jsonify(result=result, execute_id=execute_id)
+    return jsonify(result=result, execute_id=dag.uuid)
 
 
-@_app.route("/workflow-save", methods=["POST"])
+@_app.route("/workflow_save", methods=["POST"])
 def workflow_save() -> Response:
     """
     Save the workflow JSON data to the local user folder.
     """
     # user_login = session.get("user_login", "local_user")
     user_dir = os.path.join(_cache_dir)
+    # 之后用用户_id替代
+    id = uuid.uuid4()
     if not os.path.exists(user_dir):
         os.makedirs(user_dir)
 
@@ -316,8 +389,6 @@ def workflow_save() -> Response:
     if not filename:
         return jsonify({"message": "Filename is required"})
 
-    filepath = os.path.join(user_dir, f"{filename}.json")
-
     try:
         workflow = json.loads(workflow_str)
         if not isinstance(workflow, dict):
@@ -325,40 +396,67 @@ def workflow_save() -> Response:
     except (json.JSONDecodeError, ValueError):
         return jsonify({"message": "Invalid workflow data"})
 
-    if os.path.exists(filepath):
-        return jsonify({"message": "Workflow file exists!"})
-    else:
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(workflow, f, ensure_ascii=False, indent=4)
+    # 数据库存储
+    try:
+        _db.session.add(
+            _WorkflowTable(
+                id=str(id),
+                config_name=filename,
+                config_content=workflow_str,
+            ),
+        )
+        _db.session.commit()
+    except SQLAlchemyError as e:
+        _db.session.rollback()
+        raise e
 
     return jsonify({"message": "Workflow file saved successfully"})
 
 
-@_app.route("/workflow-get", methods=["POST"])
+@_app.route("/workflow_get", methods=["POST"])
 def workflow_get() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
-    # user_login = session.get("user_login", "local_user")
-    user_dir = os.path.join(_cache_dir)
-    print(user_dir)
-    if not os.path.exists(user_dir):
-        os.makedirs(user_dir)
-
     data = request.json
     filename = data.get("filename")
-    if not filename:
-        return jsonify({"error": "Filename is required"}), 400
+    execute_id = data.get("id")
+    if not filename or not execute_id:
+        return jsonify({"error": "Filename and id is required"}), 400
 
-    filepath = os.path.join(user_dir, filename)
-    print(filepath)
-    if not os.path.exists(filepath):
-        return jsonify({"error": "File not found"}), 404
+    workflow_config = _WorkflowTable.query.filter_by(id=execute_id).first()
+    if not workflow_config:
+        abort(400, f"workflow_config [{execute_id}] not exists")
 
-    with open(filepath, "r", encoding="utf-8") as f:
-        json_data = json.load(f)
+    return jsonify(
+        {
+            "code": 0,
+            "result": workflow_config.config_content,
+            "message": ""
+        },
+    )
 
-    return jsonify(json_data)
+
+@_app.route("/workflow_get_process", methods=["GET"])
+def workflow_get_process() -> tuple[Response, int] | Response:
+    """
+    Reads and returns workflow process results from the specified JSON file.
+    """
+    # data = request.json
+    execute_id = request.args.get("execute_id")
+
+    workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id).first()
+    if not workflow_result:
+        abort(400, f"workflow_result [{execute_id}] not exists")
+
+    workflow_result.execute_result = json.loads(workflow_result.execute_result)
+    return jsonify(
+        {
+            "code": 0,
+            "result": workflow_result.execute_result,
+            "message": ""
+        },
+    )
 
 
 def workflow_format_convert(origin_dict: dict) -> dict:
@@ -367,10 +465,10 @@ def workflow_format_convert(origin_dict: dict) -> dict:
     edges = origin_dict.get("edges", [])
 
     for node in nodes:
-        node_id = node.get("id")
+        node_id = node["id"]
         node_data = {
             "data": {
-                "args": node.get("data")
+                "args": node["data"]
             },
             "inputs": {
                 "input_1": {
@@ -382,7 +480,7 @@ def workflow_format_convert(origin_dict: dict) -> dict:
                     "connections": []
                 }
             },
-            "name": node.get("type")
+            "name": node["type"]
         }
         converted_dict.setdefault(node_id, node_data)
 
@@ -398,6 +496,30 @@ def workflow_format_convert(origin_dict: dict) -> dict:
 
     return converted_dict
 
+
+def node_format_convert(node_dict: dict) -> dict:
+    converted_dict = {}
+    node_id = node_dict["id"]
+    node_data = {
+        "data": {
+            "args": node_dict["data"]
+        },
+        "inputs": {
+            "input_1": {
+                "connections": []
+            }
+        },
+        "outputs": {
+            "output_1": {
+                "connections": []
+            }
+        },
+        "name": node_dict["type"]
+    }
+    converted_dict.setdefault(node_id, node_data)
+    return converted_dict
+
+
 def get_workflow_running_result(nodes_result: list, execute_id: str, execute_status: str, execute_cost: str) -> dict:
     execute_result = {
         "execute_id": execute_id,
@@ -407,11 +529,10 @@ def get_workflow_running_result(nodes_result: list, execute_id: str, execute_sta
     }
     return execute_result
 
+
 def standardize_single_node_format(data: dict) -> dict:
     for value in data.values():
-        print(value)
         for field in ['inputs', 'outputs']:
-            print(value[field])
             # 如果字段是一个字典，且'connections'键存在于字典中
             if 'input_1' in value[field]:
                 # 将'connections'字典设置为[]
@@ -419,6 +540,50 @@ def standardize_single_node_format(data: dict) -> dict:
             elif 'output_1' in value[field]:
                 value[field]['output_1']['connections'] = []
     return data
+
+
+def plugin_desc_config_generator(data: dict) -> dict:
+    plugin_desc_config = {
+        "name_for_human": data["plugin_name"],
+        "name_for_model": data["model_name"],
+        "desc_for_human": data["plugin_desc"],
+        "desc_for_model": data["plugin_desc"],
+        "field": data["plugin_field"],
+        "question_example": data["plugin_question_example"],
+        "answer_example": data["model_name"],
+        "confirm_required": "false",
+        "api_info": {
+            "url": "http://127.0.0.1:5001/plugin_publish",  # 后续改为服务部署的url地址
+            "method": "post",
+            "content_type": "application/json",
+            "input_params": [
+                {
+                    "name": "plugin_name",
+                    "description": "插件名称",
+                    "required": "true",
+                    "schema": {
+                        "type": "string",
+                        "default": "插件名称"
+                    },
+                    "para_example": "插件名称"
+                },
+                {
+                    "name": "data",
+                    "description": "问题",
+                    "required": "true",
+                    "schema": {
+                        "type": "string",
+                        "default": data["plugin_question_example"]
+                    },
+                    "para_example": data["plugin_question_example"]
+                }
+            ]
+        },
+        "version": "1.0",
+        "contact_email": "test@163.com"
+    }
+    return plugin_desc_config
+
 
 def init(
         host: str = "127.0.0.1",
