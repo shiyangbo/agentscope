@@ -122,7 +122,7 @@ class ASDiGraph(nx.DiGraph):
             else:
                 raise ValueError("Too many predecessors!")
 
-    def run_with_param(self, input_param: dict, config: dict) -> (Any, dict) :
+    def run_with_param(self, input_param: dict, config: dict) -> (Any, dict):
         """
         Execute the computations associated with each node in the graph.
 
@@ -137,14 +137,8 @@ class ASDiGraph(nx.DiGraph):
             for node_id in sorted_nodes
             if node_id not in self.nodes_not_in_graph
         ]
-        logger.info(f"input_param: {input_param}")
-        logger.info(f"sorted_nodes: {sorted_nodes}")
-        logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
 
-        # Cache output
-        output_values = {}
-        # Cahce input
-        input_values = {}
+        input_values, output_values, status_values = {}, {}, {}
         # Run with predecessors outputs
         for node_id in sorted_nodes:
             inputs = [
@@ -152,20 +146,24 @@ class ASDiGraph(nx.DiGraph):
                 for predecessor in self.predecessors(node_id)
             ]
             if not inputs:
-                input_values[node_id] = input_param
                 output_values[node_id] = self.exec_node(node_id, input_param)
             elif len(inputs) == 1:
-                input_values[node_id] = inputs[0]
                 output_values[node_id] = self.exec_node(node_id, inputs[0])
             else:
                 raise ValueError("Too many predecessors!")
-        logger.info(f"output_values: {output_values}")
-        logger.info(f"intput_values: {input_values}")
+
+            # 保存各个节点的信息
+            input_values[node_id] = self.nodes[node_id]["opt"].input_params
+            output_values[node_id] = self.nodes[node_id]["opt"].output_params
+            status_values[node_id] = self.nodes[node_id]["opt"].running_status
+
         # 初始化节点运行结果并更新
         nodes_result = set_initial_nodes_result(config)
-        updated_nodes_result = update_nodes_with_values(nodes_result, output_values, input_values)
-        logger.info(f"updated_nodes_result: {updated_nodes_result}")
+        updated_nodes_result = update_nodes_with_values(nodes_result, output_values, input_values, status_values)
+        logger.info(f"{output_values=}, {input_values=}, {status_values=}")
+        logger.info(f"workflow total runnig result: {updated_nodes_result}")
         return output_values[sorted_nodes[-1]], updated_nodes_result
+
     def compile(  # type: ignore[no-untyped-def]
         self,
         compiled_filename: str = "",
@@ -312,7 +310,7 @@ class ASDiGraph(nx.DiGraph):
             The output of the node's computation.
         """
         opt = self.nodes[node_id]["opt"]
-        logger.info(f"{node_id}, {opt}, x_in: {x_in}")
+        # logger.info(f"{node_id}, {opt}, x_in: {x_in}")
         if not x_in and not isinstance(x_in, dict):
             raise Exception(f'x_in type:{type(x_in)} not dict')
         out_values = opt(**x_in)
@@ -426,13 +424,22 @@ def set_initial_nodes_result(config: dict) -> list:
         node_result.append(node_result_dict)
     return node_result
 
-def update_nodes_with_values(nodes, output_values, input_values):
-    for node in nodes:
+def update_nodes_with_values(nodes, output_values, input_values, status_values):
+    for index, node in enumerate(nodes):
         node_id = node['node_id']
         node_type = node['node_type']
-        node['outputs'] = output_values.get(node_id, {})
+        node['node_status'] = status_values.get(node_id, "init")
+
         if node_type == "StartNode":
+            node['inputs'] = {}
             node['outputs'] = input_values.get(node_id, {})
+        elif node_type == "EndNode":
+            node['inputs'] = output_values.get(node_id, {})
+            node['outputs'] = {}
         else:
             node['inputs'] = input_values.get(node_id, {})
+            node['outputs'] = output_values.get(node_id, {})
+
+        nodes[index] = node
+
     return nodes

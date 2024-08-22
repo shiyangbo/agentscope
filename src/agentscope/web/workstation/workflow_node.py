@@ -894,10 +894,25 @@ class StartNode(WorkflowNode):
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
-        self.params = None
+        self.input_params = {}
+        self.output_params = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
         self.dag_id = dag_id
 
     def __call__(self, *args, **kwargs):
+        # 注意，这里是开始节点，所以不需要判断入参是否为空
+
+        self.running_status = 'running'
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = 'success'
+            return self.output_params
+        except Exception as e:
+            self.running_status = f'failed: {e}'
+            return {}
+
+    def run(self, *args, **kwargs):
         if len(kwargs) == 0:
             raise Exception("input param dict kwargs empty")
 
@@ -937,12 +952,13 @@ class StartNode(WorkflowNode):
                 continue
             params_pool[self.dag_id][self.node_id][k] = v
 
-        self.params = params_pool[self.dag_id][self.node_id]
-        logger.info(f"{self.var_name}, run success, params: {self.params}")
-        return {}
+        self.output_params = params_pool[self.dag_id][self.node_id]
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return self.output_params
 
     def __str__(self) -> str:
-        message = f'dag: {self.dag_id}, {self.var_name}, params: {self.params}'
+        message = f'dag: {self.dag_id}, {self.var_name}'
         return message
 
     def compile(self) -> dict:
@@ -989,11 +1005,33 @@ class EndNode(WorkflowNode):
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
-        self.params = None
+        self.input_params = {}
+        self.output_params = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
         self.dag_id = dag_id
 
     def __call__(self, *args, **kwargs) -> dict:
+        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        if len(kwargs) == 0:
+            self.running_status = 'init'
+            return {}
+
+        print(f'{kwargs=}')
+
+        self.running_status = 'running'
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = 'success'
+            # 尾节点，没有输出值
+            return {}
+        except Exception as e:
+            self.running_status = f'failed: {e}'
+            return {}
+
+    def run(self, *args, **kwargs):
         global params_pool
+        params_pool.setdefault(self.dag_id, {})
         params_pool[self.dag_id].setdefault(self.node_id, {})
 
         params_dict = self.opt_kwargs
@@ -1021,12 +1059,13 @@ class EndNode(WorkflowNode):
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
             params_pool[self.dag_id][self.node_id] |= param_one_dict
 
-        self.params = params_pool[self.dag_id][self.node_id]
-        logger.info(f"{self.var_name}, run success, params: {self.params}")
-        return params_pool[self.dag_id][self.node_id]
+        self.input_params = params_pool[self.dag_id][self.node_id]
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return self.input_params
 
     def __str__(self) -> str:
-        message = f'dag: {self.dag_id}, {self.var_name}, params: {self.params}'
+        message = f'dag: {self.dag_id}, {self.var_name}'
         return message
 
     def compile(self) -> dict:
