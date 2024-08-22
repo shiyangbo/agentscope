@@ -38,8 +38,8 @@ from agentscope.service import (
     ServiceFactory,
     ServiceToolkit,
     api_request,
+    service_status,
 )
-
 
 import json
 
@@ -58,10 +58,11 @@ def parse_json_to_dict(extract_text: str) -> dict:
     except json.decoder.JSONDecodeError as e:
         raise e
 
+
 def generate_python_param(param_spec: dict, params_pool_for_dag: dict) -> dict:
     paramName = param_spec['name']
 
-    if param_spec['value']['type'] == 'ref':
+    if params_pool_for_dag and param_spec['value']['type'] == 'ref':
         referenceNodeName = param_spec['value']['content']['ref_node_id']
         referenceParamName = param_spec['value']['content']['ref_var_name']
         paramValue = params_pool_for_dag[referenceNodeName][referenceParamName]
@@ -82,6 +83,7 @@ class WorkflowNodeType(IntEnum):
     COPY = 5
     START = 6
     END = 7
+    PYTHON = 8
 
 
 class WorkflowNode(ABC):
@@ -908,8 +910,8 @@ class StartNode(WorkflowNode):
             self.run(*args, **kwargs)
             self.running_status = 'success'
             return self.output_params
-        except Exception as e:
-            self.running_status = f'failed: {e}'
+        except Exception as err:
+            self.running_status = f'failed: {err=}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -942,17 +944,16 @@ class StartNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
-            params_pool[self.dag_id][self.node_id] |= param_one_dict
+            self.output_params = param_one_dict
 
         # 2. 解析实际的取值
         for k, v in kwargs.items():
-            if k not in params_pool[self.dag_id][self.node_id]:
+            if k not in self.output_params:
                 continue
-            params_pool[self.dag_id][self.node_id][k] = v
+            self.output_params[k] = v
 
-        self.output_params = params_pool[self.dag_id][self.node_id]
+        params_pool[self.dag_id][self.node_id] |= self.output_params
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1017,16 +1018,14 @@ class EndNode(WorkflowNode):
             self.running_status = 'init'
             return {}
 
-        print(f'{kwargs=}')
-
         self.running_status = 'running'
         try:
             self.run(*args, **kwargs)
             self.running_status = 'success'
             # 尾节点，没有输出值
             return {}
-        except Exception as e:
-            self.running_status = f'failed: {e}'
+        except Exception as err:
+            self.running_status = f'failed: {err=}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -1034,6 +1033,7 @@ class EndNode(WorkflowNode):
         params_pool.setdefault(self.dag_id, {})
         params_pool[self.dag_id].setdefault(self.node_id, {})
 
+        # 1. 建立参数映射
         params_dict = self.opt_kwargs
         for i, param_spec in enumerate(params_dict['inputs']):
             # param_spec 举例
@@ -1055,11 +1055,10 @@ class EndNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
-            params_pool[self.dag_id][self.node_id] |= param_one_dict
+            self.input_params = param_one_dict
 
-        self.input_params = params_pool[self.dag_id][self.node_id]
+        # 注意，尾节点不需要再放到全局变量池里
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.input_params
@@ -1102,7 +1101,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
     这个代码将作为 execute_python_code 函数的 code 参数传入。
     """
 
-    node_type = WorkflowNodeType.SERVICE
+    node_type = WorkflowNodeType.PYTHON
 
     def __init__(
             self,
@@ -1110,35 +1109,136 @@ class PythonServiceUserTypingNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
+            dag_id: Optional[str] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        self.service_func = ServiceToolkit.get(execute_python_code)
-        self.python_code = opt_kwargs.get("python_code", "")
-        self.timeout = opt_kwargs.get("timeout", 300)
-        self.use_docker = opt_kwargs.get("use_docker", None)
-        self.maximum_memory_bytes = opt_kwargs.get("maximum_memory_bytes", None)
-        # 添加输出参数名称(可选)
-        self.result_var_name = opt_kwargs.get("result_var_name", "result")
+        # opt_kwargs 包含用户定义的节点输入变量
+        self.input_params = {}
+        self.output_params = {}
+        self.output_params_spec = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
+        self.dag_id = dag_id
+
+        self.python_code = ""
+
+    def __call__(self, *args, **kwargs) -> dict:
+        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        if len(kwargs) == 0:
+            self.running_status = 'init'
+            return {}
+
+        self.running_status = 'running'
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = 'success'
+            return self.output_params
+        except Exception as err:
+            self.running_status = f'failed: {err=}'
+            return {}
+
+    def run(self, *args, **kwargs):
+        global params_pool
+        params_pool.setdefault(self.dag_id, {})
+        params_pool[self.dag_id].setdefault(self.node_id, {})
+
+        # 1. 建立参数映射
+        params_dict = self.opt_kwargs
+        for i, param_spec in enumerate(params_dict['inputs']):
+            # param_spec 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            self.input_params = {'params': param_one_dict}
+
+        # 2. 运行python解释器代码
+        response = execute_python_code(
+            self.python_code, use_docker=False, extra_readonly_input_params=self.input_params['params'])
+        if response.status == service_status.ServiceExecStatus.ERROR:
+            raise Exception(str(response.content))
+        self.output_params = response.content
+
+        # 检查返回值是否对应
+        for k in self.output_params_spec:
+            if k not in self.output_params:
+                raise Exception(f'output param {k} not found in code')
+
+        params_pool[self.dag_id][self.node_id] |= self.output_params
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return self.output_params
+
+    def __str__(self) -> str:
+        message = f'dag: {self.dag_id}, {self.var_name}'
+        return message
 
     def compile(self) -> dict:
-        # 将代码执行的所有必要参数格式化为字典
-        execs = (
-            f'{DEFAULT_FLOW_VAR} = {self.var_name}('
-            f'code={repr(self.python_code)}, '
-            f'timeout={self.timeout}, '
-            f'use_docker={self.use_docker}, '
-            f'maximum_memory_bytes={self.maximum_memory_bytes})'
-            # 节点运行结果存入输出变量
-            f'global_vars["{self.result_var_name}"] = {DEFAULT_FLOW_VAR}.result'
-        )
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
 
-        save_result = f'global_vars["{self.result_var_name}"] = {DEFAULT_FLOW_VAR}'
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        self.python_code = params_dict['settings'].get('code', "")
+        if self.python_code == "":
+            raise Exception("python code empty")
+
+        for i, param_spec in enumerate(params_dict['outputs']):
+            # param_spec 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+            param_one_dict = generate_python_param(param_spec, {})
+            self.output_params_spec = param_one_dict
+
         return {
-            "imports": "from agentscope.service import ServiceFactory\n"
-                       "from agentscope.service import execute_python_code",
-            "inits": f"{self.var_name} = ServiceFactory.get(execute_python_code)",
-            "execs": execs,
-
+            "imports": "",
+            "inits": "",
+            "execs": "",
         }
 
 
@@ -1200,9 +1300,11 @@ NODE_NAME_MAPPING = {
     "PythonService": PythonServiceNode,
     "ReadTextService": ReadTextServiceNode,
     "WriteTextService": WriteTextServiceNode,
+
+    # 自定义节点
     "StartNode": StartNode,
     "EndNode": EndNode,
-    "PythonServiceUserTypingNode": PythonServiceUserTypingNode,
+    "PythonNode": PythonServiceUserTypingNode,
 }
 
 

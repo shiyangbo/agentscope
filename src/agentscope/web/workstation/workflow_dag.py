@@ -138,7 +138,9 @@ class ASDiGraph(nx.DiGraph):
             if node_id not in self.nodes_not_in_graph
         ]
 
-        input_values, output_values, status_values = {}, {}, {}
+        total_input_values, total_output_values, total_status_values = {}, {}, {}
+
+        output_values = {}
         # Run with predecessors outputs
         for node_id in sorted_nodes:
             inputs = [
@@ -153,14 +155,15 @@ class ASDiGraph(nx.DiGraph):
                 raise ValueError("Too many predecessors!")
 
             # 保存各个节点的信息
-            input_values[node_id] = self.nodes[node_id]["opt"].input_params
-            output_values[node_id] = self.nodes[node_id]["opt"].output_params
-            status_values[node_id] = self.nodes[node_id]["opt"].running_status
+            total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
+            total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
+            total_status_values[node_id] = self.nodes[node_id]["opt"].running_status
 
         # 初始化节点运行结果并更新
         nodes_result = set_initial_nodes_result(config)
-        updated_nodes_result = update_nodes_with_values(nodes_result, output_values, input_values, status_values)
-        logger.info(f"{output_values=}, {input_values=}, {status_values=}")
+        updated_nodes_result = update_nodes_with_values(
+            nodes_result, total_output_values, total_input_values, total_status_values)
+        logger.info(f"{total_output_values=}, {total_input_values=}, {total_status_values=}")
         logger.info(f"workflow total runnig result: {updated_nodes_result}")
         return input_values[sorted_nodes[-1]], updated_nodes_result
 
@@ -250,6 +253,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.SERVICE,
             WorkflowNodeType.START,
             WorkflowNodeType.END,
+            WorkflowNodeType.PYTHON,
         ]:
             raise NotImplementedError(node_cls)
 

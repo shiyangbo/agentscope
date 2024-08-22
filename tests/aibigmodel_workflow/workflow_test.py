@@ -152,7 +152,7 @@ def test_workflow_run():
     script_path = "./test.json"
     config_frontend = load_config(script_path)
     config_backend = workflow_format_convert(config_frontend)
-    dict1 = {'poiNew': 123123}
+    dict1 = {'poi': [{"location": "beijing"}]}
     dag = build_dag(config_backend)
     dag.run_with_param(dict1, config_frontend)
     # hack, 释放全局变量池里的内存空间
