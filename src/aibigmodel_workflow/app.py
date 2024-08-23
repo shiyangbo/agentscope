@@ -241,12 +241,11 @@ def _convert_config_to_py_and_run() -> Response:
 
 
 # 发布调试成功的workflow
-@_app.route("/plugin_publish", methods=["POST"])
+@_app.route("/plugin/publish", methods=["POST"])
 def plugin_publish() -> Response:
     id = uuid.uuid4()
     data = request.json.get("data")
-    print(type(data))
-    plugin_config = json.dumps(data["plugin_config"])
+    plugin_config = json.dumps(data["pluginConfig"])
     # 数据库存储
     plugin_desc_config = plugin_desc_config_generator(data)
     plugin_desc_config = json.dumps(plugin_desc_config)
@@ -254,11 +253,11 @@ def plugin_publish() -> Response:
         _db.session.add(
             _PluginTable(
                 id=str(id),
-                plugin_name=data["plugin_name"],
-                model_name=data["model_name"],
-                plugin_desc=data["plugin_desc"],
+                plugin_name=data["pluginName"],
+                model_name=data["modelName"],
+                plugin_desc=data["pluginDesc"],
                 plugin_config=plugin_config,
-                plugin_field=data["plugin_field"],
+                plugin_field=data["pluginField"],
                 plugin_desc_config=plugin_desc_config
             ),
         )
@@ -268,18 +267,18 @@ def plugin_publish() -> Response:
         raise
     # 调用agent智能体接口，将插件进行注册
 
-    return jsonify({"message": "Workflow file published successfully"})
+    return jsonify({"code": 0, "message": "Workflow file published successfully"})
 
 
 # 已经发布的workflow直接运行
-@_app.route("/plugin_run", methods=["POST"])
+@_app.route("/plugin/run", methods=["POST"])
 def plugin_run() -> Response:
     """
     Input query data and get response.
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    plugin_name = request.json.get("plugin_name")
+    plugin_name = request.json.get("pluginName")
     plugin = _PluginTable.query.filter_by(plugin_name=plugin_name).first()
     if not plugin:
         abort(400, f"plugin [{plugin_name}] not exists")
@@ -295,6 +294,8 @@ def plugin_run() -> Response:
     # 获取workflow与各节点的执行结果
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
     execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    if not execute_result:
+        abort(400, f"execute result [{dag.uuid}] not exists")
     execute_result = json.dumps(execute_result)
     # 数据库存储
     try:
@@ -309,35 +310,35 @@ def plugin_run() -> Response:
         _db.session.rollback()
         raise e
     logger.info(f"execute_result: {execute_result}")
-    return jsonify(result=result, execute_id=dag.uuid)
+    return jsonify(code=0, result=result, executeID=dag.uuid)
 
 
-@_app.route("/node_run", methods=["POST"])
+@_app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
     """
     Input query data and get response.
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    node = request.json.get("node_schema")
+    node = request.json.get("nodeSchema")
     # 使用node_id, 获取需要运行的node配置
     node_config = node_format_convert(node)
     dag = build_dag(node_config)
     # content中的data内容
     result, _ = dag.run_with_param(content, node_config)
 
-    return jsonify(result=result)
+    return jsonify(code=0, result=result)
 
 
 # 画布中的workflow，调试运行
-@_app.route("/workflow_run", methods=["POST"])
+@_app.route("/workflow/run", methods=["POST"])
 def workflow_run() -> Response:
     """
     Input query data and get response.
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    workflow_schema = request.json.get("workflow_schema")
+    workflow_schema = request.json.get("workflowSchema")
     logger.info(f"workflow_schema: {workflow_schema}")
     # 存入数据库的数据为前端格式，需要转换为后端可识别格式
     converted_config = workflow_format_convert(workflow_schema)
@@ -354,6 +355,8 @@ def workflow_run() -> Response:
     # 需要持久化
     logger.info(f"execute_result: {execute_result}")
     execute_result = json.dumps(execute_result)
+    if not execute_result:
+        abort(400, f"execute result [{dag.uuid}] not exists")
     # 数据库存储
     try:
         _db.session.add(
@@ -367,10 +370,10 @@ def workflow_run() -> Response:
         _db.session.rollback()
         raise e
 
-    return jsonify(result=result, execute_id=dag.uuid)
+    return jsonify(code=0, result=result, executeID=dag.uuid)
 
 
-@_app.route("/workflow_save", methods=["POST"])
+@_app.route("/workflow/save", methods=["POST"])
 def workflow_save() -> Response:
     """
     Save the workflow JSON data to the local user folder.
@@ -387,14 +390,14 @@ def workflow_save() -> Response:
     filename = data.get("filename")
     workflow_str = data.get("workflow")
     if not filename:
-        return jsonify({"message": "Filename is required"})
+        return jsonify({"code": 400, "message": "Filename is required"})
 
     try:
         workflow = json.loads(workflow_str)
         if not isinstance(workflow, dict):
             raise ValueError
     except (json.JSONDecodeError, ValueError):
-        return jsonify({"message": "Invalid workflow data"})
+        return jsonify({"code": 400, "message": "Invalid workflow data"})
 
     # 数据库存储
     try:
@@ -410,10 +413,10 @@ def workflow_save() -> Response:
         _db.session.rollback()
         raise e
 
-    return jsonify({"message": "Workflow file saved successfully"})
+    return jsonify({"code": 0, "message": "Workflow file saved successfully"})
 
 
-@_app.route("/workflow_get", methods=["POST"])
+@_app.route("/workflow/get", methods=["GET"])
 def workflow_get() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
@@ -437,13 +440,13 @@ def workflow_get() -> tuple[Response, int] | Response:
     )
 
 
-@_app.route("/workflow_get_process", methods=["GET"])
+@_app.route("/workflow/status", methods=["GET"])
 def workflow_get_process() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow process results from the specified JSON file.
     """
-    # data = request.json
-    execute_id = request.args.get("execute_id")
+    data = request.json
+    execute_id = data.get("executeID")
 
     workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id).first()
     if not workflow_result:
@@ -544,21 +547,21 @@ def standardize_single_node_format(data: dict) -> dict:
 
 def plugin_desc_config_generator(data: dict) -> dict:
     plugin_desc_config = {
-        "name_for_human": data["plugin_name"],
-        "name_for_model": data["model_name"],
-        "desc_for_human": data["plugin_desc"],
-        "desc_for_model": data["plugin_desc"],
-        "field": data["plugin_field"],
-        "question_example": data["plugin_question_example"],
-        "answer_example": data["model_name"],
+        "name_for_human": data["pluginName"],
+        "name_for_model": data["modelName"],
+        "desc_for_human": data["pluginDesc"],
+        "desc_for_model": data["pluginDesc"],
+        "field": data["pluginField"],
+        "question_example": data["pluginQuestionExample"],
+        "answer_example": data["modelName"],
         "confirm_required": "false",
         "api_info": {
-            "url": "http://127.0.0.1:5001/plugin_publish",  # 后续改为服务部署的url地址
+            "url": "http://127.0.0.1:5001/plugin/run",  # 后续改为服务部署的url地址
             "method": "post",
             "content_type": "application/json",
             "input_params": [
                 {
-                    "name": "plugin_name",
+                    "name": "pluginName",
                     "description": "插件名称",
                     "required": "true",
                     "schema": {
@@ -573,9 +576,9 @@ def plugin_desc_config_generator(data: dict) -> dict:
                     "required": "true",
                     "schema": {
                         "type": "string",
-                        "default": data["plugin_question_example"]
+                        "default": data["pluginQuestionExample"]
                     },
-                    "para_example": data["plugin_question_example"]
+                    "para_example": data["pluginQuestionExample"]
                 }
             ]
         },
