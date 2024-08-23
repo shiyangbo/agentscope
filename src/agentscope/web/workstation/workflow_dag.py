@@ -165,7 +165,7 @@ class ASDiGraph(nx.DiGraph):
             nodes_result, total_output_values, total_input_values, total_status_values)
         logger.info(f"{total_output_values=}, {total_input_values=}, {total_status_values=}")
         logger.info(f"workflow total runnig result: {updated_nodes_result}")
-        return input_values[sorted_nodes[-1]], updated_nodes_result
+        return total_input_values[sorted_nodes[-1]], updated_nodes_result
 
     def compile(  # type: ignore[no-untyped-def]
         self,
@@ -428,22 +428,13 @@ def set_initial_nodes_result(config: dict) -> list:
         node_result.append(node_result_dict)
     return node_result
 
+
 def update_nodes_with_values(nodes, output_values, input_values, status_values):
     for index, node in enumerate(nodes):
         node_id = node['node_id']
-        node_type = node['node_type']
         node['node_status'] = status_values.get(node_id, "init")
-
-        if node_type == "StartNode":
-            node['inputs'] = {}
-            node['outputs'] = input_values.get(node_id, {})
-        elif node_type == "EndNode":
-            node['inputs'] = output_values.get(node_id, {})
-            node['outputs'] = {}
-        else:
-            node['inputs'] = input_values.get(node_id, {})
-            node['outputs'] = output_values.get(node_id, {})
-
+        node['inputs'] = input_values.get(node_id, {})
+        node['outputs'] = output_values.get(node_id, {})
         nodes[index] = node
 
     return nodes

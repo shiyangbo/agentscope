@@ -1177,7 +1177,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
         # 检查返回值是否对应
         for k in self.output_params_spec:
             if k not in self.output_params:
-                raise Exception(f'output param {k} not found in code')
+                raise Exception(f"user defined variable '{k}' not found in 'output_params' code return value")
 
         params_pool[self.dag_id][self.node_id] |= self.output_params
         logger.info(

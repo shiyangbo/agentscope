@@ -184,7 +184,6 @@ def _sys_execute(
             chdir = os.chdir
 
             # hack, 这里约定 params 是 exec(code) 代码里的唯一入参, output_params 是唯一出参
-            params = {}
             output_params = {}
             err_str = ''
 
@@ -205,6 +204,7 @@ def _sys_execute(
                 except Exception as err:
                     err_str = str(err)
 
+            del namespace_dict
             del params
             # Needed for cleaning up.
             shutil.rmtree = rmtree
