@@ -10,6 +10,7 @@ import copy
 import json
 from typing import Any
 from loguru import logger
+import uuid
 
 import agentscope
 from agentscope.web.workstation.workflow_node import (
@@ -73,6 +74,8 @@ class ASDiGraph(nx.DiGraph):
 
         self.execs = ["\n"]
         self.config = {}
+        kwargs.setdefault('uuid', None)
+        self.uuid = kwargs['uuid']
 
     def save(self, save_filepath: str = "",) -> None:
         if len(self.config) > 0:
@@ -119,7 +122,7 @@ class ASDiGraph(nx.DiGraph):
             else:
                 raise ValueError("Too many predecessors!")
 
-    def run_with_param(self, input_param: dict) -> Any:
+    def run_with_param(self, input_param: dict, config: dict) -> (Any, dict):
         """
         Execute the computations associated with each node in the graph.
 
@@ -134,27 +137,43 @@ class ASDiGraph(nx.DiGraph):
             for node_id in sorted_nodes
             if node_id not in self.nodes_not_in_graph
         ]
-        logger.info(f"sorted_nodes: {sorted_nodes}")
-        logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
+        logger.info(f"topological sorted nodes: {sorted_nodes}")
 
-        # Cache output
-        values = {}
-
+        total_input_values, total_output_values, total_status_values = {}, {}, {}
+        output_values = {}
         # Run with predecessors outputs
         for node_id in sorted_nodes:
             inputs = [
-                values[predecessor]
+                output_values[predecessor]
                 for predecessor in self.predecessors(node_id)
             ]
-            if not inputs:
-                values[node_id] = self.exec_node(node_id, input_param)
-            elif len(inputs) == 1:
-                values[node_id] = self.exec_node(node_id, inputs[0])
-            else:
-                raise ValueError("Too many predecessors!")
 
-        return values[sorted_nodes[-1]]
-    
+            if len(inputs) == 0:
+                # 开始节点
+                output_values[node_id] = self.exec_node(node_id, input_param)
+            elif len(inputs) == 1:
+                output_values[node_id] = self.exec_node(node_id, inputs[0])
+            elif len(inputs) > 1:
+                # 关键路径对应节点
+                all_predecessor_node_output_params = {}
+                for i, predecessor_node_output_params in enumerate(inputs):
+                    all_predecessor_node_output_params |= predecessor_node_output_params
+                output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
+            else:
+                raise ValueError("unknown condition")
+
+            # 保存各个节点的信息
+            total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
+            total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
+            total_status_values[node_id] = self.nodes[node_id]["opt"].running_status
+
+        # 初始化节点运行结果并更新
+        nodes_result = set_initial_nodes_result(config)
+        updated_nodes_result = update_nodes_with_values(
+            nodes_result, total_output_values, total_input_values, total_status_values)
+        logger.info(f"workflow total runnig result: {updated_nodes_result}")
+        return total_input_values[sorted_nodes[-1]], updated_nodes_result
+
     def compile(  # type: ignore[no-untyped-def]
         self,
         compiled_filename: str = "",
@@ -241,6 +260,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.SERVICE,
             WorkflowNodeType.START,
             WorkflowNodeType.END,
+            WorkflowNodeType.PYTHON,
         ]:
             raise NotImplementedError(node_cls)
 
@@ -266,6 +286,7 @@ class ASDiGraph(nx.DiGraph):
             opt_kwargs=node_info["data"].get("args", {}),
             source_kwargs=node_info["data"].get("source", {}),
             dep_opts=dep_opts,
+            dag_id=self.uuid,
         )
 
         # Add build compiled python code
@@ -299,17 +320,11 @@ class ASDiGraph(nx.DiGraph):
         Returns:
             The output of the node's computation.
         """
-        logger.debug(
-            f"\nnode_id: {node_id}\nin_values:{x_in}",
-        )
         opt = self.nodes[node_id]["opt"]
-        logger.debug(
-            f"\nnode_id: {node_id}\nopt:{opt}",
-        )
-        out_values = opt(x_in)
-        logger.debug(
-            f"\nnode_id: {node_id}\nout_values:{out_values}",
-        )
+        # logger.info(f"{node_id}, {opt}, x_in: {x_in}")
+        if not x_in and not isinstance(x_in, dict):
+            raise Exception(f'x_in type:{type(x_in)} not dict')
+        out_values = opt(**x_in)
         return out_values
 
 
@@ -363,10 +378,10 @@ def build_dag(config: dict) -> ASDiGraph:
     Raises:
         ValueError: If the resulting graph is not acyclic.
     """
-    dag = ASDiGraph()
+    dag = ASDiGraph(**{'uuid': str(uuid.uuid4())})
 
     dag.config = config
-    dag.save("./test.json")
+    dag.save("./test_save.json")
     logger.info((f"config {config}"))
     for node_id, node_info in config.items():
         config[node_id] = sanitize_node_data(node_info)
@@ -404,3 +419,29 @@ def build_dag(config: dict) -> ASDiGraph:
         raise ValueError("The provided configuration does not form a DAG.")
 
     return dag
+
+def set_initial_nodes_result(config: dict) -> list:
+    nodes = config.get("nodes", [])
+    node_result = []
+    for node in nodes:
+        node_result_dict = {
+            "node_id": node["id"],
+            "node_status": "",
+            "node_type": node["type"],
+            "inputs": {},
+            "outputs": {},
+            "node_execute_cost": ""
+        }
+        node_result.append(node_result_dict)
+    return node_result
+
+
+def update_nodes_with_values(nodes, output_values, input_values, status_values):
+    for index, node in enumerate(nodes):
+        node_id = node['node_id']
+        node['node_status'] = status_values.get(node_id, "init")
+        node['inputs'] = input_values.get(node_id, {})
+        node['outputs'] = output_values.get(node_id, {})
+        nodes[index] = node
+
+    return nodes

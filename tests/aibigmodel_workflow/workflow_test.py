@@ -2,6 +2,7 @@ import json
 import traceback
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.studio._app import _remove_file_paths
+from aibigmodel_workflow.app import workflow_format_convert
 from typing import Tuple
 
 
@@ -149,10 +150,15 @@ def test_workflow_run():
         load_config,
     )
     script_path = "./test.json"
-    config = load_config(script_path)
-    dict1 = {'poi': 123123}
-    dag = build_dag(config)
-    dag.run_with_param(dict1)
+    config_frontend = load_config(script_path)
+    config_backend = workflow_format_convert(config_frontend)
+    dict1 = {'poi': [{"location": "beijing"}]}
+    dag = build_dag(config_backend)
+    dag.run_with_param(dict1, config_frontend)
+    # hack, 释放全局变量池里的内存空间
+    import agentscope.web.workstation.workflow_node as wn_module
+    if dag.uuid in wn_module.params_pool:
+        del wn_module.params_pool[dag.uuid]
 
 
 def test_parse_json_to_dict():

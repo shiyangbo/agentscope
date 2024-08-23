@@ -2,6 +2,7 @@
 """Service to execute python code."""
 import builtins
 import contextlib
+import copy
 import inspect
 import io
 import multiprocessing
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import traceback
+import codecs
 from hashlib import md5
 from typing import Optional, Union, Tuple
 
@@ -41,6 +43,7 @@ def execute_python_code(
     timeout: Optional[Union[int, float]] = 300,
     use_docker: Optional[Union[bool, str]] = None,
     maximum_memory_bytes: Optional[int] = None,
+    extra_readonly_input_params: Optional[dict] = None,
 ) -> ServiceResponse:
     """
     Execute a piece of python code.
@@ -115,6 +118,7 @@ def execute_python_code(
             code,
             timeout,
             maximum_memory_bytes,
+            extra_readonly_input_params,
         )
 
     return response
@@ -125,6 +129,7 @@ def _sys_execute(
     shared_list: list,
     maximum_memory_bytes: int,
     timeout: int,
+    extra_readonly_input_params: Optional[dict] = None,
 ) -> None:
     """
     Executes the given Python code in a controlled environment, capturing
@@ -144,37 +149,77 @@ def _sys_execute(
         None: This function does not return anything. It appends the results
             to the shared_list.
     """
-    is_success = False
-    with create_tempdir():
-        # These system calls are needed when cleaning up tempdir.
-        rmtree = shutil.rmtree
-        rmdir = os.rmdir
-        chdir = os.chdir
+    if not extra_readonly_input_params:
+        is_success = False
+        with create_tempdir():
+            # These system calls are needed when cleaning up tempdir.
+            rmtree = shutil.rmtree
+            rmdir = os.rmdir
+            chdir = os.chdir
 
-        sys_python_guard(maximum_memory_bytes)
-        output_buffer, error_buffer = io.StringIO(), io.StringIO()
-        with timer(timeout), contextlib.redirect_stdout(
-            output_buffer,
-        ), contextlib.redirect_stderr(error_buffer):
-            try:
-                exec(code)
-                is_success = True
-            except Exception:
-                error_buffer.write(traceback.format_exc())
+            sys_python_guard(maximum_memory_bytes)
+            output_buffer, error_buffer = io.StringIO(), io.StringIO()
+            with timer(timeout), contextlib.redirect_stdout(
+                output_buffer,
+            ), contextlib.redirect_stderr(error_buffer):
+                try:
+                    exec(code)
+                    is_success = True
+                except Exception:
+                    error_buffer.write(traceback.format_exc())
 
-        # Needed for cleaning up.
-        shutil.rmtree = rmtree
-        os.rmdir = rmdir
-        os.chdir = chdir
-    shared_list.extend(
-        [output_buffer.getvalue(), error_buffer.getvalue(), is_success],
-    )
+            # Needed for cleaning up.
+            shutil.rmtree = rmtree
+            os.rmdir = rmdir
+            os.chdir = chdir
+        shared_list.extend(
+            [output_buffer.getvalue(), error_buffer.getvalue(), is_success],
+        )
+    else:
+        is_success = False
+        with create_tempdir():
+            # These system calls are needed when cleaning up tempdir.
+            rmtree = shutil.rmtree
+            rmdir = os.rmdir
+            chdir = os.chdir
+
+            # hack, 这里约定 params 是 exec(code) 代码里的唯一入参, output_params 是唯一出参
+            output_params = {}
+            err_str = ''
+
+            sys_python_guard(maximum_memory_bytes)
+            output_buffer, error_buffer = io.StringIO(), io.StringIO()
+            with timer(timeout), contextlib.redirect_stdout(
+                    output_buffer,
+            ), contextlib.redirect_stderr(error_buffer):
+                try:
+                    params = copy.deepcopy(extra_readonly_input_params)
+                    namespace_dict = {'params': params}
+
+                    code += '\noutput_params=main(params)'
+                    exec(code, namespace_dict)
+
+                    output_params = namespace_dict.get('output_params', {})
+                    is_success = True
+                except Exception as err:
+                    err_str = str(err)
+
+            del namespace_dict
+            del params
+            # Needed for cleaning up.
+            shutil.rmtree = rmtree
+            os.rmdir = rmdir
+            os.chdir = chdir
+        shared_list.extend(
+            [output_params, err_str, is_success],
+        )
 
 
 def _execute_python_code_sys(
     code: str = "",
     timeout: Optional[Union[int, float]] = None,
     maximum_memory_bytes: Optional[int] = None,
+    extra_readonly_input_params: Optional[dict] = None,
 ) -> ServiceResponse:
     """
     Execute string of python code in system environments.
@@ -200,6 +245,7 @@ def _execute_python_code_sys(
             shared_list,
             maximum_memory_bytes,
             timeout,
+            extra_readonly_input_params,
         ),
     )
     p.start()
