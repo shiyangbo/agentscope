@@ -63,13 +63,11 @@ def api_request(
     try:
         # Attempt to parse response as JSON
         content = resp.json()
-
     except ValueError:
-
         # If response is not JSON, return raw text
         content = resp.text
         # 这里我们约定，返回内容必须是json字符串，所以这里简单定义
-        content = j.dumps({'data': content}, ensure_ascii=False, indent=4)
+        content = {'data': content}
 
     return ServiceResponse(ServiceExecStatus.SUCCESS, content)
 
@@ -88,5 +86,5 @@ if __name__ == '__main__':
         params={"keywords": "雍和宫"},  # 查询参数
         api_key="77b5f0d102c848d443b791fd469b732d",  # 作为查询参数传递 API 密钥
     )
-    print(response.content)
-    print(response2.content)
+    print(response)
+    print(response2)

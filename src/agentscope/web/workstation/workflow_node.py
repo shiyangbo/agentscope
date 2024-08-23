@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Workflow node opt."""
 import copy
+import base64
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import List, Optional
@@ -84,6 +85,8 @@ class WorkflowNodeType(IntEnum):
     START = 6
     END = 7
     PYTHON = 8
+    APIGET = 9
+    APIPOST = 10
 
 
 class WorkflowNode(ABC):
@@ -1176,7 +1179,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
         # 检查返回值是否对应
         for k in self.output_params_spec:
             if k not in self.output_params:
-                raise Exception(f"user defined variable '{k}' not found in 'output_params' code return value")
+                raise Exception(f"user defined output parameter '{k}' not found in 'output_params' code return value")
 
         params_pool[self.dag_id][self.node_id] |= self.output_params
         logger.info(
@@ -1207,7 +1210,19 @@ class PythonServiceUserTypingNode(WorkflowNode):
         if not isinstance(params_dict['settings'], dict):
             raise Exception(f"settings:{params_dict['settings']} type is not dict")
 
-        self.python_code = params_dict['settings'].get('code', "")
+        base64_python_code = params_dict['settings'].get('code', None)
+        if not base64_python_code:
+            raise Exception("python code empty")
+
+        isBase64 = False
+        try:
+            base64.b64encode(base64.b64decode(base64_python_code)) == base64_python_code
+            isBase64 = True
+        except Exception:
+            isBase64 = False
+            raise Exception("python code str not base64")
+
+        self.python_code = base64.b64decode(base64_python_code).decode('utf-8')
         if self.python_code == "":
             raise Exception("python code empty")
 
@@ -1243,12 +1258,164 @@ class PythonServiceUserTypingNode(WorkflowNode):
 
 # 新增通用api调用节点
 # api请求的所需参数从setting中获取
-class ApiServiceNode(WorkflowNode):
+class ApiGetNode(WorkflowNode):
     """
-    API Service Node for executing HTTP requests using the api_request function.
+    API GET Node for executing HTTP requests using the api_request function.
     """
 
-    node_type = WorkflowNodeType.SERVICE
+    node_type = WorkflowNodeType.APIGET
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            dag_id: Optional[str] = None,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        self.input_params = {}
+        self.output_params = {}
+        self.output_params_spec = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
+        self.dag_id = dag_id
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        for i, param_spec in enumerate(params_dict['outputs']):
+            # param_spec 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+            param_one_dict = generate_python_param(param_spec, {})
+            self.output_params_spec = param_one_dict
+
+        return {
+            "imports": "",
+            "inits": "",
+            "execs": "",
+        }
+
+    def __call__(self, *args, **kwargs):
+        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        if len(kwargs) == 0:
+            self.running_status = 'init'
+            return {}
+
+        self.running_status = 'running'
+        try:
+            response_str = self.run(*args, **kwargs)
+            self.running_status = 'success'
+
+            if len(self.output_params_spec) == 0:
+                # 特殊情况，单个api节点的调式模式，直接返回response结果，不做拆包解析
+                return response_str
+            else:
+                return self.output_params
+        except Exception as err:
+            self.running_status = f'failed: {err=}'
+            return {}
+
+    def run(self, *args, **kwargs) -> str:
+        global params_pool
+        params_pool.setdefault(self.dag_id, {})
+        params_pool[self.dag_id].setdefault(self.node_id, {})
+
+        # 1. 建立参数映射
+        params_dict = self.opt_kwargs
+        for i, param_spec in enumerate(params_dict['inputs']):
+            # param_spec 举例
+            # {
+            #     "name": "apiKeywords",
+            #     "type": "string",
+            #     "desc": "",
+            #     "required": false,
+            #     "value": {
+            #         "type": "ref",
+            #         "content": {
+            #             "ref_node_id": "4daf0d1a33af497e9819fe515133eb5f",
+            #             "ref_var_name": "keywords"
+            #         }
+            #     },
+            #     "object_schema": null,
+            #     "list_schema": null,
+            #     "extra": {
+            #         "location": "query"
+            #     }
+            # }
+            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            self.input_params['params'] |= param_one_dict
+
+        # 2. 使用 api_request 函数进行 API 请求设置
+        request_settings = self.params_dict['settings']
+        response = api_request(
+            url=request_settings.get('url'),
+            method=request_settings.get('method'),
+            auth=request_settings.get('auth'),
+            api_key=request_settings.get('api_key'),
+            params={input_item['name']: input_item['value'] for input_item in params_dict['inputs']},
+            headers={header['name']: header['value'] for header in request_settings.get('headers', [])},
+            **request_settings.get('extra', {})
+        )
+        if response.status == service_status.ServiceExecStatus.ERROR:
+            raise Exception(str(response.content))
+        response_str = json.dumps(response.content, ensure_ascii=False, indent=4)
+
+        # 3. 拆包解析
+        if len(self.output_params_spec) == 0:
+            return response_str
+        self.output_params = response.content
+        # 检查返回值是否对应
+        for k in self.output_params_spec:
+            if k not in self.output_params:
+                raise Exception(f"user defined output parameter '{k}' not found in api response")
+
+        params_pool[self.dag_id][self.node_id] |= self.output_params
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return response_str
+
+
+class ApiPostNode(WorkflowNode):
+    """
+        API POST Node for executing HTTP requests using the api_request function.
+        """
+
+    node_type = WorkflowNodeType.APIPOST
 
     def __init__(
             self,
@@ -1258,36 +1425,10 @@ class ApiServiceNode(WorkflowNode):
             dep_opts: list,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        self.req = None  # 初始化时将 self.requ 设为 None
+        pass
 
     def compile(self) -> dict:
-        params_dict = self.opt_kwargs
-
-        # 校验必需的键是否存在，并验证它们的数据类型
-        required_keys = {
-            'inputs': list,
-            'outputs': list,
-            'settings': dict,
-        }
-
-        for key, expected_type in required_keys.items():
-            if key not in params_dict:
-                raise ValueError(f"'{key}' key not found in opt_kwargs")
-            if not isinstance(params_dict[key], expected_type):
-                raise TypeError(f"'{key}': {params_dict[key]} is not of type {expected_type.__name__}")
-
-        request_settings = params_dict['settings']
-
-        # 使用 api_request 函数进行 API 请求设置
-        self.req = api_request(
-            url=request_settings.get('url'),
-            method=request_settings.get('method'),
-            auth=request_settings.get('auth'),
-            api_key=request_settings.get('api_key'),
-            params={input_item['name']: input_item['value'] for input_item in params_dict['inputs']},
-            headers={header['name']: header['value'] for header in request_settings.get('headers', [])},
-            **request_settings.get('extra', {})
-        )
+        pass
 
         return {
             "imports": "",
@@ -1296,10 +1437,7 @@ class ApiServiceNode(WorkflowNode):
         }
 
     def __call__(self, *args, **kwargs):
-        # 执行服务函数并返回结果
-        if self.req is None:
-            raise RuntimeError("API request has not been compiled yet.")
-        return self.req
+        pass
 
 
 NODE_NAME_MAPPING = {
@@ -1331,6 +1469,8 @@ NODE_NAME_MAPPING = {
     "StartNode": StartNode,
     "EndNode": EndNode,
     "PythonNode": PythonServiceUserTypingNode,
+    "ApiGetNode": ApiGetNode,
+    "ApiPostNode": ApiPostNode,
 }
 
 

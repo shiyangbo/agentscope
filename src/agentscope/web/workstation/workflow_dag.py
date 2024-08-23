@@ -93,13 +93,11 @@ class ASDiGraph(nx.DiGraph):
         """
         agentscope.init(logger_level="DEBUG")
         sorted_nodes = list(nx.topological_sort(self))
-        print("sorted_nodes: ", sorted_nodes)
         sorted_nodes = [
             node_id
             for node_id in sorted_nodes
             if node_id not in self.nodes_not_in_graph
         ]
-        print("nodes_not_in_graph: ", self.nodes_not_in_graph)
         logger.info(f"sorted_nodes: {sorted_nodes}")
         logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
 
@@ -261,6 +259,8 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.START,
             WorkflowNodeType.END,
             WorkflowNodeType.PYTHON,
+            WorkflowNodeType.APIGET,
+            WorkflowNodeType.APIPOST,
         ]:
             raise NotImplementedError(node_cls)
 
