@@ -945,7 +945,7 @@ class StartNode(WorkflowNode):
             #     }
             # }
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
-            self.output_params = param_one_dict
+            self.output_params |= param_one_dict
 
         # 2. 解析实际的取值
         for k, v in kwargs.items():
@@ -1056,7 +1056,7 @@ class EndNode(WorkflowNode):
             #     }
             # }
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
-            self.input_params = param_one_dict
+            self.input_params |= param_one_dict
 
         # 注意，尾节点不需要再放到全局变量池里
         logger.info(
@@ -1113,7 +1113,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
-        self.input_params = {}
+        self.input_params = {'params': {}}
         self.output_params = {}
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
@@ -1165,7 +1165,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     }
             # }
             param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
-            self.input_params = {'params': param_one_dict}
+            self.input_params['params'] |= param_one_dict
 
         # 2. 运行python解释器代码
         response = execute_python_code(

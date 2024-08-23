@@ -137,9 +137,9 @@ class ASDiGraph(nx.DiGraph):
             for node_id in sorted_nodes
             if node_id not in self.nodes_not_in_graph
         ]
+        logger.info(f"topological sorted nodes: {sorted_nodes}")
 
         total_input_values, total_output_values, total_status_values = {}, {}, {}
-
         output_values = {}
         # Run with predecessors outputs
         for node_id in sorted_nodes:
@@ -147,12 +147,20 @@ class ASDiGraph(nx.DiGraph):
                 output_values[predecessor]
                 for predecessor in self.predecessors(node_id)
             ]
-            if not inputs:
+
+            if len(inputs) == 0:
+                # 开始节点
                 output_values[node_id] = self.exec_node(node_id, input_param)
             elif len(inputs) == 1:
                 output_values[node_id] = self.exec_node(node_id, inputs[0])
+            elif len(inputs) > 1:
+                # 关键路径对应节点
+                all_predecessor_node_output_params = {}
+                for i, predecessor_node_output_params in enumerate(inputs):
+                    all_predecessor_node_output_params |= predecessor_node_output_params
+                output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
             else:
-                raise ValueError("Too many predecessors!")
+                raise ValueError("unknown condition")
 
             # 保存各个节点的信息
             total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
@@ -163,7 +171,6 @@ class ASDiGraph(nx.DiGraph):
         nodes_result = set_initial_nodes_result(config)
         updated_nodes_result = update_nodes_with_values(
             nodes_result, total_output_values, total_input_values, total_status_values)
-        logger.info(f"{total_output_values=}, {total_input_values=}, {total_status_values=}")
         logger.info(f"workflow total runnig result: {updated_nodes_result}")
         return total_input_values[sorted_nodes[-1]], updated_nodes_result
 
