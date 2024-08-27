@@ -6,6 +6,7 @@ import copy
 import inspect
 import io
 import multiprocessing
+import concurrent.futures
 import os
 import platform
 import re
@@ -263,9 +264,23 @@ def _execute_python_code_sys(
                 content=f"{output}\n{error}",
             )
     else:
-        p = multiprocessing.Pool(1)
-        output, error, status = p.apply_async(
-            _sys_execute, args=(code, [], maximum_memory_bytes, timeout, extra_readonly_input_params)).get()
+        # 线程版本
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            args = [code, [], maximum_memory_bytes, timeout, extra_readonly_input_params]
+            future = executor.submit(_sys_execute, *args)
+            try:
+                output, error, status = future.result()
+            except Exception as e:
+                return ServiceResponse(
+                    status=ServiceExecStatus.ERROR,
+                    content=f"{e}",
+                )
+
+        # 进程版本
+        # p = multiprocessing.Pool(1)
+        # output, error, status = p.apply_async(
+        #     _sys_execute, args=(code, [], maximum_memory_bytes, timeout, extra_readonly_input_params)).get()
+
         if status:
             return ServiceResponse(
                 status=ServiceExecStatus.SUCCESS,
