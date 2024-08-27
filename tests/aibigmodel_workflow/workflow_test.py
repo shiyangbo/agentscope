@@ -197,6 +197,7 @@ def test_parse_json_to_dict():
     print(output['outputs'][0]['object_schema'])
     print(output['outputs'][0]['value'])
 
+
 def test_parse_pythoncode_to_code():
     from agentscope.service.execute_code.exec_python import execute_python_code
     from agentscope.web.workstation.workflow_node import parse_json_to_dict

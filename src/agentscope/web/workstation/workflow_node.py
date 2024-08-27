@@ -1249,8 +1249,7 @@ class StartNode(WorkflowNode):
             self.running_status = 'success'
             return self.output_params
         except Exception as err:
-            import traceback
-            self.running_status = f'failed: {err=}, {traceback.format_exc()}'
+            self.running_status = f'failed: {repr(err)}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -1366,7 +1365,7 @@ class EndNode(WorkflowNode):
             # 尾节点，没有输出值
             return {}
         except Exception as err:
-            self.running_status = f'failed: {err=}'
+            self.running_status = f'failed: {repr(err)}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -1477,7 +1476,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             self.running_status = 'success'
             return self.output_params
         except Exception as err:
-            self.running_status = f'failed: {err=}'
+            self.running_status = f'failed: {repr(err)}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -1565,6 +1564,8 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.python_code = base64.b64decode(base64_python_code).decode('utf-8')
         if self.python_code == "":
             raise Exception("python code empty")
+        if r'\n' in self.python_code:
+            raise Exception("chrome front end's python code not valid")
 
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
@@ -1690,7 +1691,7 @@ class ApiGetNode(WorkflowNode):
             else:
                 return self.output_params
         except Exception as err:
-            self.running_status = f'failed: {err=}'
+            self.running_status = f'failed: {repr(err)}'
             return {}
 
     def run(self, *args, **kwargs) -> str:
