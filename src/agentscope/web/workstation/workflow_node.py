@@ -336,8 +336,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.START,
             WorkflowNodeType.END,
             WorkflowNodeType.PYTHON,
-            WorkflowNodeType.APIGET,
-            WorkflowNodeType.APIPOST,
+            WorkflowNodeType.API,
         ]:
             raise NotImplementedError(node_cls)
 
@@ -418,8 +417,7 @@ class WorkflowNodeType(IntEnum):
     START = 6
     END = 7
     PYTHON = 8
-    APIGET = 9
-    APIPOST = 10
+    API = 9
 
 
 class WorkflowNode(ABC):
@@ -1599,12 +1597,12 @@ class PythonServiceUserTypingNode(WorkflowNode):
 
 # 新增通用api调用节点
 # api请求的所需参数从setting中获取
-class ApiGetNode(WorkflowNode):
+class ApiNode(WorkflowNode):
     """
     API GET Node for executing HTTP requests using the api_request function.
     """
 
-    node_type = WorkflowNodeType.APIGET
+    node_type = WorkflowNodeType.API
 
     def __init__(
             self,
@@ -1813,8 +1811,7 @@ NODE_NAME_MAPPING = {
     "StartNode": StartNode,
     "EndNode": EndNode,
     "PythonNode": PythonServiceUserTypingNode,
-    "ApiGetNode": ApiGetNode,
-    "ApiPostNode": ApiPostNode,
+    "ApiNode": ApiNode,
 }
 
 

@@ -269,7 +269,7 @@ def _execute_python_code_sys(
             args = [code, [], maximum_memory_bytes, timeout, extra_readonly_input_params]
             future = executor.submit(_sys_execute, *args)
             try:
-                output, error, status = future.result()
+                output, error, status = future.result(timeout=timeout+1)
             except Exception as e:
                 return ServiceResponse(
                     status=ServiceExecStatus.ERROR,
