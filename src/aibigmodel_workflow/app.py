@@ -51,7 +51,8 @@ app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
 app.config['SQLALCHEMY_POOL_RECYCLE'] = 3600
 app.config['SQLALCHEMY_ECHO'] = False
 
-db = SQLAlchemy(app)
+db = SQLAlchemy()
+db.init_app(app)
 
 socketio = SocketIO(app)
 

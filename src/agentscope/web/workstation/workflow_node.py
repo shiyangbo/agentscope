@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Workflow node opt."""
-import copy
 import base64
+import json
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import List, Optional
 from loguru import logger
+from typing import Any
 
+import agentscope
 from agentscope import msghub
 from agentscope.agents import (
     DialogAgent,
@@ -37,17 +39,29 @@ from agentscope.service import (
     write_text_file,
     execute_python_code,
     ServiceFactory,
-    ServiceToolkit,
     api_request,
     service_status,
 )
 
-import json
+try:
+    import networkx as nx
+except ImportError:
+    nx = None
 
 DEFAULT_FLOW_VAR = "flow"
 
-# 全局变量池
-params_pool = {}
+
+def remove_duplicates_from_end(lst: list) -> list:
+    """remove duplicates element from end on a list"""
+    seen = set()
+    result = []
+    for item in reversed(lst):
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    result.reverse()
+    return result
+
 
 def parse_json_to_dict(extract_text: str) -> dict:
     # Parse the content into JSON object
@@ -60,16 +74,335 @@ def parse_json_to_dict(extract_text: str) -> dict:
         raise e
 
 
-def generate_python_param(param_spec: dict, params_pool_for_dag: dict) -> dict:
-    paramName = param_spec['name']
+class ASDiGraph(nx.DiGraph):
+    """
+    A class that represents a directed graph, extending the functionality of
+    networkx's DiGraph to suit specific workflow requirements in AgentScope.
 
-    if params_pool_for_dag and param_spec['value']['type'] == 'ref':
-        referenceNodeName = param_spec['value']['content']['ref_node_id']
-        referenceParamName = param_spec['value']['content']['ref_var_name']
-        paramValue = params_pool_for_dag[referenceNodeName][referenceParamName]
-        return {paramName: paramValue}
+    This graph supports operations such as adding nodes with associated
+    computations and executing these computations in a topological order.
 
-    return {paramName: param_spec['value']['content']}
+    Attributes:
+        nodes_not_in_graph (set): A set of nodes that are not included in
+        the computation graph.
+    """
+
+    def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """
+        Initialize the ASDiGraph instance.
+        """
+        super().__init__(*args, **kwargs)
+        self.nodes_not_in_graph = set()
+
+        # Prepare the header of the file with necessary imports and any
+        # global definitions
+        self.imports = [
+            "import agentscope",
+        ]
+
+        self.inits = [
+            'agentscope.init(logger_level="DEBUG")',
+            f"{DEFAULT_FLOW_VAR} = None",
+        ]
+
+        self.execs = ["\n"]
+        self.config = {}
+        kwargs.setdefault('uuid', None)
+        self.uuid = kwargs['uuid']
+        self.params_pool = {}
+
+    def generate_python_param(self, param_spec: dict) -> dict:
+        param_name = param_spec['name']
+
+        if self.params_pool and param_spec['value']['type'] == 'ref':
+            reference_node_name = param_spec['value']['content']['ref_node_id']
+            reference_param_name = param_spec['value']['content']['ref_var_name']
+            param_value = self.params_pool[reference_node_name][reference_param_name]
+            return {param_name: param_value}
+
+        return {param_name: param_spec['value']['content']}
+
+    @staticmethod
+    def generate_python_param_spec(param_spec: dict) -> dict:
+        param_name = param_spec['name']
+        return {param_name: param_spec['value']['content']}
+
+    @staticmethod
+    def set_initial_nodes_result(config: dict) -> list:
+        nodes = config.get("nodes", [])
+        node_result = []
+        for node in nodes:
+            node_result_dict = {
+                "node_id": node["id"],
+                "node_status": "",
+                "node_type": node["type"],
+                "inputs": {},
+                "outputs": {},
+                "node_execute_cost": ""
+            }
+            node_result.append(node_result_dict)
+        return node_result
+
+    @staticmethod
+    def update_nodes_with_values(nodes, output_values, input_values, status_values):
+        for index, node in enumerate(nodes):
+            node_id = node['node_id']
+            node['node_status'] = status_values.get(node_id, "init")
+            node['inputs'] = input_values.get(node_id, {})
+            node['outputs'] = output_values.get(node_id, {})
+            nodes[index] = node
+
+        return nodes
+
+    def save(self, save_filepath: str = "",) -> None:
+        if len(self.config) > 0:
+            # Write the script to file
+            with open(save_filepath, "w", encoding="utf-8") as file:
+                json.dump(self.config, file)
+
+    def run(self) -> None:
+        """
+        Execute the computations associated with each node in the graph.
+
+        The method initializes AgentScope, performs a topological sort of
+        the nodes, and then runs each node's computation sequentially using
+        the outputs from its predecessors as inputs.
+        """
+        agentscope.init(logger_level="DEBUG")
+        sorted_nodes = list(nx.topological_sort(self))
+        sorted_nodes = [
+            node_id
+            for node_id in sorted_nodes
+            if node_id not in self.nodes_not_in_graph
+        ]
+        logger.info(f"sorted_nodes: {sorted_nodes}")
+        logger.info(f"nodes_not_in_graph: {self.nodes_not_in_graph}")
+
+        # Cache output
+        values = {}
+
+        # Run with predecessors outputs
+        for node_id in sorted_nodes:
+            inputs = [
+                values[predecessor]
+                for predecessor in self.predecessors(node_id)
+            ]
+            logger.info(f"inputs: {inputs}")
+            print("len(inputs): ", len(inputs))
+            if not inputs:
+                values[node_id] = self.exec_node(node_id)
+            elif len(inputs):
+                # Note: only support exec with the first predecessor now
+                values[node_id] = self.exec_node(node_id, inputs[0])
+            else:
+                raise ValueError("Too many predecessors!")
+
+    def run_with_param(self, input_param: dict, config: dict) -> (Any, dict):
+        """
+        Execute the computations associated with each node in the graph.
+
+        The method initializes AgentScope, performs a topological sort of
+        the nodes, and then runs each node's computation sequentially using
+        the outputs from its predecessors as inputs.
+        """
+        agentscope.init(logger_level="DEBUG")
+        sorted_nodes = list(nx.topological_sort(self))
+        sorted_nodes = [
+            node_id
+            for node_id in sorted_nodes
+            if node_id not in self.nodes_not_in_graph
+        ]
+        logger.info(f"topological sorted nodes: {sorted_nodes}")
+
+        total_input_values, total_output_values, total_status_values = {}, {}, {}
+        output_values = {}
+        # Run with predecessors outputs
+        for node_id in sorted_nodes:
+            inputs = [
+                output_values[predecessor]
+                for predecessor in self.predecessors(node_id)
+            ]
+
+            if len(inputs) == 0:
+                # 开始节点
+                output_values[node_id] = self.exec_node(node_id, input_param)
+            elif len(inputs) == 1:
+                output_values[node_id] = self.exec_node(node_id, inputs[0])
+            elif len(inputs) > 1:
+                # 关键路径对应节点
+                all_predecessor_node_output_params = {}
+                for i, predecessor_node_output_params in enumerate(inputs):
+                    all_predecessor_node_output_params |= predecessor_node_output_params
+                output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
+            else:
+                raise ValueError("unknown condition")
+
+            # 保存各个节点的信息
+            total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
+            total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
+            total_status_values[node_id] = self.nodes[node_id]["opt"].running_status
+
+        # 初始化节点运行结果并更新
+        nodes_result = ASDiGraph.set_initial_nodes_result(config)
+        updated_nodes_result = ASDiGraph.update_nodes_with_values(
+            nodes_result, total_output_values, total_input_values, total_status_values)
+        logger.info(f"workflow total runnig result: {updated_nodes_result}")
+        return total_input_values[sorted_nodes[-1]], updated_nodes_result
+
+    def compile(  # type: ignore[no-untyped-def]
+        self,
+        compiled_filename: str = "",
+        **kwargs,
+    ) -> str:
+        """Compile DAG to a runnable python code"""
+
+        def format_python_code(code: str) -> str:
+            try:
+                from black import FileMode, format_str
+
+                logger.debug("Formatting Code with black...")
+                return format_str(code, mode=FileMode())
+            except Exception:
+                return code
+
+        self.inits[
+            0
+        ] = f'agentscope.init(logger_level="DEBUG", {kwarg_converter(kwargs)})'
+
+        sorted_nodes = list(nx.topological_sort(self))
+        sorted_nodes = [
+            node_id
+            for node_id in sorted_nodes
+            if node_id not in self.nodes_not_in_graph
+        ]
+
+        for node_id in sorted_nodes:
+            node = self.nodes[node_id]
+            self.execs.append(node["compile_dict"]["execs"])
+
+        header = "\n".join(self.imports)
+
+        # Remove duplicate import
+        new_imports = remove_duplicates_from_end(header.split("\n"))
+        header = "\n".join(new_imports)
+        body = "\n    ".join(self.inits + self.execs)
+
+        main_body = f"def main():\n    {body}"
+
+        # Combine header and body to form the full script
+        script = (
+            f"{header}\n\n\n{main_body}\n\nif __name__ == "
+            f"'__main__':\n    main()\n"
+        )
+
+        formatted_code = format_python_code(script)
+
+        logger.info(f"compiled_filename: {compiled_filename}")
+        if len(compiled_filename) > 0:
+            # Write the script to file
+            with open(compiled_filename, "w", encoding="utf-8") as file:
+                file.write(formatted_code)
+        return formatted_code
+
+    # pylint: disable=R0912
+    def add_as_node(
+        self,
+        node_id: str,
+        node_info: dict,
+        config: dict,
+    ) -> Any:
+        """
+        Add a node to the graph based on provided node information and
+        configuration.
+
+        Args:
+            node_id (str): The identifier for the node being added.
+            node_info (dict): A dictionary containing information about the
+                node.
+            config (dict): Configuration information for the node dependencies.
+
+        Returns:
+            The computation object associated with the added node.
+        """
+        node_cls = NODE_NAME_MAPPING[node_info.get("name", "")]
+        # 适配新增节点
+        if node_cls.node_type not in [
+            WorkflowNodeType.MODEL,
+            WorkflowNodeType.AGENT,
+            WorkflowNodeType.MESSAGE,
+            WorkflowNodeType.PIPELINE,
+            WorkflowNodeType.COPY,
+            WorkflowNodeType.SERVICE,
+            WorkflowNodeType.START,
+            WorkflowNodeType.END,
+            WorkflowNodeType.PYTHON,
+            WorkflowNodeType.APIGET,
+            WorkflowNodeType.APIPOST,
+        ]:
+            raise NotImplementedError(node_cls)
+
+        if self.has_node(node_id):
+            return self.nodes[node_id]["opt"]
+
+        # Init dep nodes
+        deps = [str(n) for n in node_info.get("data", {}).get("elements", [])]
+
+        # Exclude for dag when in a Group
+        if node_cls.node_type != WorkflowNodeType.COPY:
+            self.nodes_not_in_graph = self.nodes_not_in_graph.union(set(deps))
+
+        dep_opts = []
+        for dep_node_id in deps:
+            if not self.has_node(dep_node_id):
+                dep_node_info = config[dep_node_id]
+                self.add_as_node(dep_node_id, dep_node_info, config)
+            dep_opts.append(self.nodes[dep_node_id]["opt"])
+
+        node_opt = node_cls(
+            node_id=node_id,
+            opt_kwargs=node_info["data"].get("args", {}),
+            source_kwargs=node_info["data"].get("source", {}),
+            dep_opts=dep_opts,
+            dag_obj=self,
+        )
+
+        # Add build compiled python code
+        compile_dict = node_opt.compile()
+
+        self.add_node(
+            node_id,
+            opt=node_opt,
+            compile_dict=compile_dict,
+            **node_info,
+        )
+
+        # Insert compile information to imports and inits
+        self.imports.append(compile_dict["imports"])
+
+        if node_cls.node_type == WorkflowNodeType.MODEL:
+            self.inits.insert(1, compile_dict["inits"])
+        else:
+            self.inits.append(compile_dict["inits"])
+        return node_opt
+
+    def exec_node(self, node_id: str, x_in: Any = None) -> Any:
+        """
+        Execute the computation associated with a given node in the graph.
+
+        Args:
+            node_id (str): The identifier of the node whose computation is
+                to be executed.
+            x_in: The input to the node's computation. Defaults to None.
+
+        Returns:
+            The output of the node's computation.
+        """
+        opt = self.nodes[node_id]["opt"]
+        # logger.info(f"{node_id}, {opt}, x_in: {x_in}")
+        if not x_in and not isinstance(x_in, dict):
+            raise Exception(f'x_in type:{type(x_in)} not dict')
+        out_values = opt(**x_in)
+        return out_values
 
 
 class WorkflowNodeType(IntEnum):
@@ -894,7 +1227,7 @@ class StartNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
-            dag_id: Optional[str] = None,
+            dag_obj: Optional[ASDiGraph] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
@@ -902,7 +1235,10 @@ class StartNode(WorkflowNode):
         self.output_params = {}
         # init --> running -> success/failed:xxx
         self.running_status = "init"
-        self.dag_id = dag_id
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
 
     def __call__(self, *args, **kwargs):
         # 注意，这里是开始节点，所以不需要判断入参是否为空
@@ -913,7 +1249,8 @@ class StartNode(WorkflowNode):
             self.running_status = 'success'
             return self.output_params
         except Exception as err:
-            self.running_status = f'failed: {err=}'
+            import traceback
+            self.running_status = f'failed: {err=}, {traceback.format_exc()}'
             return {}
 
     def run(self, *args, **kwargs):
@@ -921,9 +1258,8 @@ class StartNode(WorkflowNode):
             raise Exception("input param dict kwargs empty")
 
         # 1. 建立参数映射
-        global params_pool
-        params_pool.setdefault(self.dag_id, {})
-        params_pool[self.dag_id].setdefault(self.node_id, {})
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
 
         params_dict = self.opt_kwargs
         for i, param_spec in enumerate(params_dict['outputs']):
@@ -946,7 +1282,7 @@ class StartNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.output_params |= param_one_dict
 
         # 2. 解析实际的取值
@@ -955,7 +1291,7 @@ class StartNode(WorkflowNode):
                 continue
             self.output_params[k] = v
 
-        params_pool[self.dag_id][self.node_id] |= self.output_params
+        params_pool[self.node_id] |= self.output_params
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1004,7 +1340,7 @@ class EndNode(WorkflowNode):
                  opt_kwargs: dict,
                  source_kwargs: dict,
                  dep_opts: list,
-                 dag_id: Optional[str] = None,
+                 dag_obj: Optional[ASDiGraph] = None,
                  ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
@@ -1012,7 +1348,10 @@ class EndNode(WorkflowNode):
         self.output_params = {}
         # init --> running -> success/failed:xxx
         self.running_status = "init"
-        self.dag_id = dag_id
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
 
     def __call__(self, *args, **kwargs) -> dict:
         # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
@@ -1031,9 +1370,8 @@ class EndNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        global params_pool
-        params_pool.setdefault(self.dag_id, {})
-        params_pool[self.dag_id].setdefault(self.node_id, {})
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1057,7 +1395,7 @@ class EndNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.input_params |= param_one_dict
 
         # 注意，尾节点不需要再放到全局变量池里
@@ -1111,7 +1449,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
-            dag_id: Optional[str] = None,
+            dag_obj: Optional[ASDiGraph] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         # opt_kwargs 包含用户定义的节点输入变量
@@ -1120,7 +1458,10 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
         self.running_status = "init"
-        self.dag_id = dag_id
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
 
         self.python_code = ""
 
@@ -1140,9 +1481,8 @@ class PythonServiceUserTypingNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        global params_pool
-        params_pool.setdefault(self.dag_id, {})
-        params_pool[self.dag_id].setdefault(self.node_id, {})
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1166,7 +1506,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.input_params['params'] |= param_one_dict
 
         # 2. 运行python解释器代码
@@ -1181,7 +1521,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             if k not in self.output_params:
                 raise Exception(f"user defined output parameter '{k}' not found in 'output_params' code return value")
 
-        params_pool[self.dag_id][self.node_id] |= self.output_params
+        params_pool[self.node_id] |= self.output_params
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1246,7 +1586,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, {})
+            param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
         return {
@@ -1271,7 +1611,7 @@ class ApiGetNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
-            dag_id: Optional[str] = None,
+            dag_obj: Optional[ASDiGraph] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         self.input_params = {}
@@ -1279,7 +1619,10 @@ class ApiGetNode(WorkflowNode):
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
         self.running_status = "init"
-        self.dag_id = dag_id
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
 
     def compile(self) -> dict:
         # 检查参数格式是否正确
@@ -1321,7 +1664,7 @@ class ApiGetNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, {})
+            param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
         return {
@@ -1351,9 +1694,8 @@ class ApiGetNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs) -> str:
-        global params_pool
-        params_pool.setdefault(self.dag_id, {})
-        params_pool[self.dag_id].setdefault(self.node_id, {})
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1377,7 +1719,7 @@ class ApiGetNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = generate_python_param(param_spec, params_pool[self.dag_id])
+            param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.input_params['params'] |= param_one_dict
 
         # 2. 使用 api_request 函数进行 API 请求设置
@@ -1404,7 +1746,7 @@ class ApiGetNode(WorkflowNode):
             if k not in self.output_params:
                 raise Exception(f"user defined output parameter '{k}' not found in api response")
 
-        params_pool[self.dag_id][self.node_id] |= self.output_params
+        params_pool[self.node_id] |= self.output_params
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return response_str
@@ -1423,6 +1765,7 @@ class ApiPostNode(WorkflowNode):
             opt_kwargs: dict,
             source_kwargs: dict,
             dep_opts: list,
+            dag_obj: Optional[ASDiGraph] = None,
     ) -> None:
         super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
         pass

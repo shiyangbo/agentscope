@@ -210,9 +210,7 @@ def _sys_execute(
             shutil.rmtree = rmtree
             os.rmdir = rmdir
             os.chdir = chdir
-        shared_list.extend(
-            [output_params, err_str, is_success],
-        )
+        return output_params, err_str, is_success
 
 
 def _execute_python_code_sys(
@@ -235,34 +233,49 @@ def _execute_python_code_sys(
         "containerized environment.",
     )
 
-    manager = multiprocessing.Manager()
-    shared_list = manager.list()
+    if not extra_readonly_input_params:
+        manager = multiprocessing.Manager()
+        shared_list = manager.list()
 
-    p = multiprocessing.Process(
-        target=_sys_execute,
-        args=(
-            code,
-            shared_list,
-            maximum_memory_bytes,
-            timeout,
-            extra_readonly_input_params,
-        ),
-    )
-    p.start()
-    p.join()
-    if p.is_alive():
-        p.kill()
-    output, error, status = shared_list[0], shared_list[1], shared_list[2]
-    if status:
-        return ServiceResponse(
-            status=ServiceExecStatus.SUCCESS,
-            content=output,
+        p = multiprocessing.Process(
+            target=_sys_execute,
+            args=(
+                code,
+                shared_list,
+                maximum_memory_bytes,
+                timeout,
+                extra_readonly_input_params,
+            ),
         )
+        p.start()
+        p.join()
+        if p.is_alive():
+            p.kill()
+        output, error, status = shared_list[0], shared_list[1], shared_list[2]
+        if status:
+            return ServiceResponse(
+                status=ServiceExecStatus.SUCCESS,
+                content=output,
+            )
+        else:
+            return ServiceResponse(
+                status=ServiceExecStatus.ERROR,
+                content=f"{output}\n{error}",
+            )
     else:
-        return ServiceResponse(
-            status=ServiceExecStatus.ERROR,
-            content=f"{output}\n{error}",
-        )
+        p = multiprocessing.Pool(1)
+        output, error, status = p.apply_async(
+            _sys_execute, args=(code, [], maximum_memory_bytes, timeout, extra_readonly_input_params)).get()
+        if status:
+            return ServiceResponse(
+                status=ServiceExecStatus.SUCCESS,
+                content=output,
+            )
+        else:
+            return ServiceResponse(
+                status=ServiceExecStatus.ERROR,
+                content=f"{output}\n{error}",
+            )
 
 
 def _execute_python_code_docker(

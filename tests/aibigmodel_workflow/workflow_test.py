@@ -155,10 +155,9 @@ def test_workflow_run():
     dict1 = {'poi': [{"location": "beijing"}]}
     dag = build_dag(config_backend)
     dag.run_with_param(dict1, config_frontend)
-    # hack, 释放全局变量池里的内存空间
-    import agentscope.web.workstation.workflow_node as wn_module
-    if dag.uuid in wn_module.params_pool:
-        del wn_module.params_pool[dag.uuid]
+    # hack, 释放变量池里的内存空间
+    if len(dag.params_pool) > 0:
+        del dag.params_pool
 
 
 def test_parse_json_to_dict():
