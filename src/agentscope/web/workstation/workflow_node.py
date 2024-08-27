@@ -128,6 +128,12 @@ class ASDiGraph(nx.DiGraph):
         return {param_name: param_spec['value']['content']}
 
     @staticmethod
+    def generate_python_param_spec_for_api_input(param_spec: dict) -> (dict, dict):
+        # TODO
+        param_name = param_spec['name']
+        return {param_name: param_spec['value']['content']}
+
+    @staticmethod
     def set_initial_nodes_result(config: dict) -> list:
         nodes = config.get("nodes", [])
         node_result = []
@@ -1275,9 +1281,6 @@ class StartNode(WorkflowNode):
             #     },
             #     "object_schema": null,
             #     "list_schema": null,
-            #     "extra": {
-            #         "location": "query"
-            #     }
             # }
             param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.output_params |= param_one_dict
@@ -1388,9 +1391,6 @@ class EndNode(WorkflowNode):
             #     },
             #     "object_schema": null,
             #     "list_schema": null,
-            #     "extra": {
-            #         "location": "query"
-            #     }
             # }
             param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.input_params |= param_one_dict
@@ -1499,9 +1499,6 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     },
             #     "object_schema": null,
             #     "list_schema": null,
-            #     "extra": {
-            #         "location": "query"
-            #     }
             # }
             param_one_dict = self.dag_obj.generate_python_param(param_spec)
             self.input_params['params'] |= param_one_dict
@@ -1581,9 +1578,6 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     },
             #     "object_schema": null,
             #     "list_schema": null,
-            #     "extra": {
-            #         "location": "query"
-            #     }
             # }
             param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
             self.output_params_spec = param_one_dict
@@ -1623,6 +1617,13 @@ class ApiNode(WorkflowNode):
         if self.dag_obj:
             self.dag_id = self.dag_obj.uuid
 
+        # GET or POST
+        self.api_type = ""
+        self.api_url = ""
+        self.api_header = {}
+        self.input_params_for_query = {}
+        self.input_params_for_body = {}
+
     def compile(self) -> dict:
         # 检查参数格式是否正确
         logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
@@ -1643,6 +1644,30 @@ class ApiNode(WorkflowNode):
         if not isinstance(params_dict['settings'], dict):
             raise Exception(f"settings:{params_dict['settings']} type is not dict")
 
+        if 'url' not in params_dict['settings']:
+            raise Exception("url key not found in settings")
+        if 'http_method' not in params_dict['settings']:
+            raise Exception("http_method key not found in settings")
+        if 'headers' not in params_dict['settings']:
+            raise Exception("headers key not found in settings")
+
+        self.api_type = params_dict['settings']['http_method']
+        self.api_url = params_dict['settings']['url']
+        self.api_header = params_dict['settings']['headers']
+
+        if self.api_type not in {"GET", "POST"}:
+            raise Exception("http type: {self.api_type} invalid")
+        if self.api_url == '':
+            raise Exception("http url empty")
+        if not isinstance(self.api_header, dict):
+            raise Exception(f"header:{self.api_header} type is not dict")
+
+        for i, param_spec in enumerate(params_dict['inputs']):
+            param_spec.setdefault('extra', {})
+            param_spec['extra'].setdefault('location', '')
+            if param_spec['extra'].get('location', '') not in {'query', 'body'}:
+                raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
+
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
             # {
@@ -1659,9 +1684,6 @@ class ApiNode(WorkflowNode):
             #     },
             #     "object_schema": null,
             #     "list_schema": null,
-            #     "extra": {
-            #         "location": "query"
-            #     }
             # }
             param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
             self.output_params_spec = param_one_dict
@@ -1718,8 +1740,12 @@ class ApiNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
-            param_one_dict = self.dag_obj.generate_python_param(param_spec)
-            self.input_params['params'] |= param_one_dict
+            param_one_dict_for_query, param_one_dict_for_body \
+                = self.dag_obj.generate_python_param_spec_for_api_input(param_spec)
+            self.input_params['params'] |= param_one_dict_for_query
+            self.input_params['params'] |= param_one_dict_for_body
+            self.input_params_for_query |= param_one_dict_for_query
+            self.input_params_for_body |= param_one_dict_for_body
 
         # 2. 使用 api_request 函数进行 API 请求设置
         request_settings = self.params_dict['settings']
@@ -1749,37 +1775,6 @@ class ApiNode(WorkflowNode):
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return response_str
-
-
-class ApiPostNode(WorkflowNode):
-    """
-        API POST Node for executing HTTP requests using the api_request function.
-        """
-
-    node_type = WorkflowNodeType.APIPOST
-
-    def __init__(
-            self,
-            node_id: str,
-            opt_kwargs: dict,
-            source_kwargs: dict,
-            dep_opts: list,
-            dag_obj: Optional[ASDiGraph] = None,
-    ) -> None:
-        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
-        pass
-
-    def compile(self) -> dict:
-        pass
-
-        return {
-            "imports": "",
-            "inits": "",
-            "execs": "",
-        }
-
-    def __call__(self, *args, **kwargs):
-        pass
 
 
 NODE_NAME_MAPPING = {
