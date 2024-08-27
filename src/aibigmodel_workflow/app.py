@@ -197,9 +197,12 @@ def _convert_config_to_py() -> Response:
     """
     Convert json config to python code and send back.
     """
-    content = request.json.get("data")
-    status, py_code = _convert_to_py(content)
-    return jsonify(py_code=py_code, is_success=status)
+    try:
+        content = request.json.get("data")
+        status, py_code = _convert_to_py(content)
+        return jsonify(py_code=py_code, is_success=status)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e)})
 
 
 def _cleanup_process(proc: subprocess.Popen) -> None:
@@ -285,10 +288,15 @@ def plugin_run() -> Response:
     plugin = _PluginTable.query.filter_by(plugin_name=plugin_name).first()
     if not plugin:
         abort(400, f"plugin [{plugin_name}] not exists")
-    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-    config = json.loads(plugin.plugin_config)
-    converted_config = workflow_format_convert(config)
-    dag = build_dag(converted_config)
+
+    try:
+        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+        config = json.loads(plugin.plugin_config)
+        converted_config = workflow_format_convert(config)
+        dag = build_dag(converted_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e)})
+
     # 调用运行dag
     start_time = time.time()
     result, nodes_result = dag.run_with_param(content, config)
@@ -324,12 +332,16 @@ def node_run() -> Response:
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
     node = request.json.get("nodeSchema")
-    # 使用node_id, 获取需要运行的node配置
-    node_config = node_format_convert(node)
-    dag = build_dag(node_config)
+
+    try:
+        # 使用node_id, 获取需要运行的node配置
+        node_config = node_format_convert(node)
+        dag = build_dag(node_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e)})
+
     # content中的data内容
     result, _ = dag.run_with_param(content, node_config)
-
     return jsonify(code=0, result=result)
 
 
@@ -343,10 +355,14 @@ def workflow_run() -> Response:
     content = request.json.get("data")
     workflow_schema = request.json.get("workflowSchema")
     logger.info(f"workflow_schema: {workflow_schema}")
-    # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-    converted_config = workflow_format_convert(workflow_schema)
-    logger.info(f"config: {converted_config}")
-    dag = build_dag(converted_config)
+
+    try:
+        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+        converted_config = workflow_format_convert(workflow_schema)
+        logger.info(f"config: {converted_config}")
+        dag = build_dag(converted_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e)})
 
     start_time = time.time()
     result, nodes_result = dag.run_with_param(content, workflow_schema)
