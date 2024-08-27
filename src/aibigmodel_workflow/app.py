@@ -330,8 +330,13 @@ def node_run() -> Response:
     Input query data and get response.
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    content = request.json.get("data")
-    node = request.json.get("nodeSchema")
+    content = {"content": "node_run"}
+    nodes = request.json.get("nodeSchema")
+    nodesValue = nodes.get("nodes", [])
+    if len(nodesValue) != 1:
+        message = "Node schema is invalid"
+        return jsonify({"code": 400,  "message": message})
+    node = nodesValue[0]
 
     try:
         # 使用node_id, 获取需要运行的node配置
@@ -341,8 +346,13 @@ def node_run() -> Response:
         return jsonify({"code": 400, "message": repr(e)})
 
     # content中的data内容
-    result, _ = dag.run_with_param(content, node_config)
-    return jsonify(code=0, result=result)
+    result, nodes_result = dag.run_with_param(content, nodes)
+    print("result", result)
+    if len(nodes_result) != 1:
+        return jsonify({"code": 400,  "message": nodes_result})
+    if nodes_result[0]["node_status"] != 'success':
+        return jsonify({"code": 400,  "message": nodes_result[0]["node_status"]})
+    return jsonify(code=0, result=nodes_result[0]["outputs"])
 
 
 # 画布中的workflow，调试运行
@@ -407,16 +417,16 @@ def workflow_save() -> Response:
     # request 参数获取
     data = request.json
     filename = data.get("filename")
-    workflow_str = data.get("workflow")
+    workflow_str = data.get("workflowSchema")
     if not filename:
         return jsonify({"code": 400, "message": "Filename is required"})
 
-    try:
-        workflow = json.loads(workflow_str)
-        if not isinstance(workflow, dict):
-            raise ValueError
-    except (json.JSONDecodeError, ValueError):
-        return jsonify({"code": 400, "message": "Invalid workflow data"})
+    # try:
+    workflow = json.dumps(workflow_str)
+    #     if not isinstance(workflow, dict):
+    #         raise ValueError
+    # except (json.JSONDecodeError, ValueError):
+    #     return jsonify({"code": 400, "message": "Invalid workflow data"})
 
     # 数据库存储
     try:
@@ -424,7 +434,7 @@ def workflow_save() -> Response:
             _WorkflowTable(
                 id=str(id),
                 config_name=filename,
-                config_content=workflow_str,
+                config_content=workflow,
             ),
         )
         db.session.commit()
