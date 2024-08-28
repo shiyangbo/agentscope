@@ -1621,8 +1621,8 @@ class ApiNode(WorkflowNode):
         self.api_type = ""
         self.api_url = ""
         self.api_header = {}
-        self.input_params_for_query = {}
-        self.input_params_for_body = {}
+        self.input_params_for_query = None
+        self.input_params_for_body = None
 
     def compile(self) -> dict:
         # 检查参数格式是否正确
@@ -1742,22 +1742,20 @@ class ApiNode(WorkflowNode):
             # }
             param_one_dict_for_query, param_one_dict_for_body \
                 = self.dag_obj.generate_python_param_spec_for_api_input(param_spec)
+
+            if not isinstance(param_one_dict_for_query, dict):
+                raise Exception("input param: {param_one_dict_for_query} type not dict")
+            if not isinstance(param_one_dict_for_body, dict):
+                raise Exception("input param: {param_one_dict_for_body} type not dict")
+
             self.input_params['params'] |= param_one_dict_for_query
             self.input_params['params'] |= param_one_dict_for_body
             self.input_params_for_query |= param_one_dict_for_query
             self.input_params_for_body |= param_one_dict_for_body
 
         # 2. 使用 api_request 函数进行 API 请求设置
-        request_settings = self.params_dict['settings']
-        response = api_request(
-            url=request_settings.get('url'),
-            method=request_settings.get('method'),
-            auth=request_settings.get('auth'),
-            api_key=request_settings.get('api_key'),
-            params={input_item['name']: input_item['value'] for input_item in params_dict['inputs']},
-            headers={header['name']: header['value'] for header in request_settings.get('headers', [])},
-            **request_settings.get('extra', {})
-        )
+        response = api_request(url=self.api_url, method=self.api_type, headers=self.api_header,
+                               params=self.input_params_for_query, json=self.input_params_for_body)
         if response.status == service_status.ServiceExecStatus.ERROR:
             raise Exception(str(response.content))
         response_str = json.dumps(response.content, ensure_ascii=False, indent=4)

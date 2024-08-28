@@ -264,7 +264,7 @@ def _execute_python_code_sys(
                 content=f"{output}\n{error}",
             )
     else:
-        # 线程版本
+        # 线程版本，注意会有未知影响，用户调用方api连接成功运行以后，第二次以及后续请求会500失败
         # with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         #     args = [code, [], maximum_memory_bytes, timeout, extra_readonly_input_params]
         #     future = executor.submit(_sys_execute, *args)

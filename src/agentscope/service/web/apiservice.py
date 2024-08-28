@@ -46,6 +46,9 @@ def api_request(
     if api_key:
         params['key'] = api_key
 
+    if json and len(json) == 0:
+        json = None
+
     try:
         resp = requests.request(
             method=method,
