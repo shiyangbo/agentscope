@@ -9,6 +9,7 @@ import tempfile
 import threading
 import traceback
 import sys
+
 sys.path.append('/agentscope/agentscope/src')
 
 from typing import Tuple, Union, Optional
@@ -28,12 +29,10 @@ from loguru import logger
 import sqlite3
 import uuid
 
-
 from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
-
 
 # DIALECT = 'mysql'
 # DRIVER = 'pymysql'
@@ -47,7 +46,7 @@ DIALECT = 'mysql'
 DRIVER = 'pymysql'
 USERNAME = 'big_model_user'
 PASSWORD = 'i7szGnGZZ08GuKaaY4Lg'
-HOST = '106.74.31.170'
+HOST = '192.168.1.215'
 PORT = '5005'
 DATABASE = 'big_model_db'
 
@@ -60,6 +59,7 @@ app.config['SQLALCHEMY_POOL_SIZE'] = 5
 app.config['SQLALCHEMY_MAX_OVERFLOW'] = 10
 app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
 app.config['SQLALCHEMY_POOL_RECYCLE'] = 3600
+app.config['SQLALCHEMY_POOL_PRE_PING'] = True
 app.config['SQLALCHEMY_ECHO'] = False
 
 db = SQLAlchemy()
@@ -83,7 +83,8 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     """Workflow store table."""
     __tablename__ = "workflow_info"
-    id = db.Column(db.String(100), primary_key=True)  # 用户ID
+    id = db.Column(db.String(100), primary_key=True)  # ID
+    user_id = db.Column(db.String(100))  # 用户ID
     config_name = db.Column(db.String(100))
     config_content = db.Column(db.Text)
 
@@ -92,7 +93,8 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     """Plugin table."""
     __tablename__ = "plugin_info"
     __table_args__ = {'extend_existing': True}
-    id = db.Column(db.String(100), primary_key=True)  # 用户ID
+    id = db.Column(db.String(100), primary_key=True)  # ID
+    user_id = db.Column(db.String(100))  # 用户ID
     plugin_name = db.Column(db.String(100))  # 插件名称
     model_name = db.Column(db.String(100))  # 插件英文名称
     plugin_desc = db.Column(db.Text)  # 插件描述
@@ -262,14 +264,23 @@ def _convert_config_to_py_and_run() -> Response:
 def plugin_publish() -> Response:
     id = uuid.uuid4()
     data = request.json.get("data")
+    user_id = request.json.get("userID")
     plugin_config = json.dumps(data["pluginConfig"])
     # 数据库存储
     plugin_desc_config = plugin_desc_config_generator(data)
     plugin_desc_config = json.dumps(plugin_desc_config)
+    # 同一用户的发布的插件名称唯一
+    plugin = _PluginTable.query.filter(
+        _PluginTable.user_id == user_id,
+        _PluginTable.plugin_name == data["pluginName"],
+    ).all()
+    if len(plugin) > 0:
+        return jsonify({"code": 400, "message": "Multiple records found for the userID"})
     try:
         db.session.add(
             _PluginTable(
                 id=str(id),
+                user_id=user_id,
                 plugin_name=data["pluginName"],
                 model_name=data["modelName"],
                 plugin_desc=data["pluginDesc"],
@@ -295,10 +306,11 @@ def plugin_run() -> Response:
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
+    user_id = request.json.get("userID")
     plugin_name = request.json.get("pluginName")
-    plugin = _PluginTable.query.filter_by(plugin_name=plugin_name).first()
+    plugin = _PluginTable.query.filter_by(plugin_name=plugin_name, user_id=user_id).first()
     if not plugin:
-        abort(400, f"plugin [{plugin_name}] not exists")
+        return jsonify({"code": 400, "message": "plugin not exists"})
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
@@ -317,7 +329,8 @@ def plugin_run() -> Response:
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
     execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
-        abort(400, f"execute result [{dag.uuid}] not exists")
+        return jsonify({"code": 400, "message": "execute result not exists"})
+
     execute_result = json.dumps(execute_result)
     # 数据库存储
     try:
@@ -346,7 +359,7 @@ def node_run() -> Response:
     nodesValue = nodes.get("nodes", [])
     if len(nodesValue) != 1:
         message = "Node schema is invalid"
-        return jsonify({"code": 400,  "message": message})
+        return jsonify({"code": 400, "message": message})
     node = nodesValue[0]
 
     try:
@@ -360,9 +373,9 @@ def node_run() -> Response:
     result, nodes_result = dag.run_with_param(content, nodes)
     print("result", result)
     if len(nodes_result) != 1:
-        return jsonify({"code": 400,  "message": nodes_result})
+        return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
-        return jsonify({"code": 400,  "message": nodes_result[0]["node_status"]})
+        return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
     return jsonify(code=0, result=nodes_result[0]["outputs"])
 
 
@@ -418,42 +431,45 @@ def workflow_save() -> Response:
     """
     Save the workflow JSON data to the local user folder.
     """
-    # user_login = session.get("user_login", "local_user")
-    # user_dir = os.path.join(_cache_dir)
-    # 之后用用户_id替代
-    id = uuid.uuid4()
-    # if not os.path.exists(user_dir):
-    #     os.makedirs(user_dir)
-
     # request 参数获取
     data = request.json
+    id = uuid.uuid4()
     filename = data.get("filename")
     workflow_str = data.get("workflowSchema")
-    if not filename:
-        return jsonify({"code": 400, "message": "Filename is required"})
+    user_id = data.get("userID")
+    if not filename or not user_id:
+        return jsonify({"code": 400, "message": "Filename and userID is required"})
+    workflow_results = _WorkflowTable.query.filter(
+        _WorkflowTable.user_id == user_id,
+        _WorkflowTable.config_name == filename
+    ).all()
+    # 不存在记录则创建，存在则更新
+    if not workflow_results:
+        try:
+            workflow = json.dumps(workflow_str)
+            db.session.add(
+                _WorkflowTable(
+                    id=id,
+                    user_id=user_id,
+                    config_name=filename,
+                    config_content=workflow,
+                ),
+            )
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            raise e
+    else:
+        try:
+            workflow = json.dumps(workflow_str)
+            db.session.query(_WorkflowTable).filter_by(id=user_id, config_name=filename).update(
+                {_WorkflowTable.config_content: workflow})
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            raise e
 
-    # try:
-    workflow = json.dumps(workflow_str)
-    #     if not isinstance(workflow, dict):
-    #         raise ValueError
-    # except (json.JSONDecodeError, ValueError):
-    #     return jsonify({"code": 400, "message": "Invalid workflow data"})
-
-    # 数据库存储
-    try:
-        db.session.add(
-            _WorkflowTable(
-                id=str(id),
-                config_name=filename,
-                config_content=workflow,
-            ),
-        )
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        raise e
-
-    return jsonify({"code": 0, "message": "Workflow file saved successfully"})
+    return jsonify({"code": 0, "userID": user_id, "message": "Workflow file saved successfully"})
 
 
 @app.route("/workflow/get", methods=["GET"])
@@ -463,13 +479,13 @@ def workflow_get() -> tuple[Response, int] | Response:
     """
     data = request.json
     filename = data.get("filename")
-    execute_id = data.get("id")
-    if not filename or not execute_id:
-        return jsonify({"error": "Filename and id is required"}), 400
+    user_id = data.get("userID")
+    if not filename or not user_id:
+        return jsonify({"error": "Filename and userID is required"}), 400
 
-    workflow_config = _WorkflowTable.query.filter_by(id=execute_id).first()
+    workflow_config = _WorkflowTable.query.filter_by(user_id=user_id, config_name=filename).first()
     if not workflow_config:
-        abort(400, f"workflow_config [{execute_id}] not exists")
+        return jsonify({"code": 400, "message": "workflow_config not exists"})
 
     return jsonify(
         {
