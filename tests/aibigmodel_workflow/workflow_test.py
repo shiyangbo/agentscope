@@ -2,7 +2,7 @@ import json
 import traceback
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.studio._app import _remove_file_paths
-from aibigmodel_workflow.app import workflow_format_convert
+from agentscope.aibigmodel_workflow.app import workflow_format_convert
 from typing import Tuple
 
 
@@ -146,7 +146,6 @@ def test_json_load_file():
 
 def test_workflow_run():
     from agentscope.web.workstation.workflow import (
-        start_workflow,
         load_config,
     )
     script_path = "./test.json"

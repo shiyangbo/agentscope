@@ -8,6 +8,9 @@ import time
 import tempfile
 import threading
 import traceback
+import sys
+sys.path.append('/agentscope/agentscope/src')
+
 from typing import Tuple, Union, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -32,13 +35,21 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 
 
+# DIALECT = 'mysql'
+# DRIVER = 'pymysql'
+# USERNAME = 'root'
+# PASSWORD = '2292558Huawei'
+# HOST = '127.0.0.1'
+# PORT = '3306'
+# DATABASE = 'agentscope'
+
 DIALECT = 'mysql'
 DRIVER = 'pymysql'
-USERNAME = 'root'
-PASSWORD = '2292558Huawei'
-HOST = '127.0.0.1'
-PORT = '3306'
-DATABASE = 'agentscope'
+USERNAME = 'big_model_user'
+PASSWORD = 'i7szGnGZZ08GuKaaY4Lg'
+HOST = '106.74.31.170'
+PORT = '5005'
+DATABASE = 'big_model_db'
 
 SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, DRIVER, USERNAME, PASSWORD, HOST, PORT,
                                                                        DATABASE)
@@ -618,8 +629,8 @@ def plugin_desc_config_generator(data: dict) -> dict:
 
 
 def init(
-        host: str = "127.0.0.1",
-        port: int = 5001,
+        host: str = "0.0.0.0",
+        port: int = 6671,
         run_dirs: Optional[Union[str, list[str]]] = None,
         debug: bool = False,
 ) -> None:
