@@ -1760,8 +1760,8 @@ class ApiNode(WorkflowNode):
             if not isinstance(param_one_dict_for_body, dict):
                 raise Exception("input param: {param_one_dict_for_body} type not dict")
 
-            self.input_params['params'] |= param_one_dict_for_query
-            self.input_params['params'] |= param_one_dict_for_body
+            self.input_params |= param_one_dict_for_query
+            self.input_params |= param_one_dict_for_body
             self.input_params_for_query |= param_one_dict_for_query
             self.input_params_for_body |= param_one_dict_for_body
 
