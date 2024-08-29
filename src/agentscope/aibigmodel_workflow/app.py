@@ -355,11 +355,11 @@ def node_run() -> Response:
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = {"content": "node_run"}
     nodes = request.json.get("nodeSchema")
-    nodesValue = nodes.get("nodes", [])
-    if len(nodesValue) != 1:
+    nodes_value = nodes.get("nodes", [])
+    if len(nodes_value) != 1:
         message = "Node schema is invalid"
         return jsonify({"code": 400, "message": message})
-    node = nodesValue[0]
+    node = nodes_value[0]
 
     try:
         # 使用node_id, 获取需要运行的node配置
