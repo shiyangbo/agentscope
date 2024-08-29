@@ -1632,8 +1632,8 @@ class ApiNode(WorkflowNode):
         self.api_type = ""
         self.api_url = ""
         self.api_header = {}
-        self.input_params_for_query = None
-        self.input_params_for_body = None
+        self.input_params_for_query = {}
+        self.input_params_for_body = {}
 
     def compile(self) -> dict:
         # 检查参数格式是否正确
