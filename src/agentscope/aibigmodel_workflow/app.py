@@ -370,7 +370,8 @@ def node_run() -> Response:
 
     # content中的data内容
     result, nodes_result = dag.run_with_param(content, nodes)
-    print("result", result)
+    print("total input", result)
+    print("total nodes_result", nodes_result)
     if len(nodes_result) != 1:
         return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
@@ -680,8 +681,6 @@ def init(
     # To be compatible with the old table schema, we need to check and convert
     # the id column of the message_table from INTEGER to VARCHAR.
     # _check_and_convert_id_type(str(_cachedb), "message_table")
-
-    # TODO, 增加全局变量池，方便保存所有入参和出参变量
 
     socketio.run(
         app,

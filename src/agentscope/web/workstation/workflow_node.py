@@ -263,7 +263,7 @@ class ASDiGraph(nx.DiGraph):
         nodes_result = ASDiGraph.set_initial_nodes_result(config)
         updated_nodes_result = ASDiGraph.update_nodes_with_values(
             nodes_result, total_output_values, total_input_values, total_status_values)
-        logger.info(f"workflow total runnig result: {updated_nodes_result}")
+        logger.info(f"workflow total running result: {updated_nodes_result}")
         return total_input_values[sorted_nodes[-1]], updated_nodes_result
 
     def compile(  # type: ignore[no-untyped-def]
