@@ -129,9 +129,20 @@ class ASDiGraph(nx.DiGraph):
 
     @staticmethod
     def generate_python_param_spec_for_api_input(param_spec: dict) -> (dict, dict):
-        # TODO
+        query_param_result, json_body_param_result = {}, {}
+
         param_name = param_spec['name']
-        return {param_name: param_spec['value']['content']}
+        param_spec.setdefault('extra', {})
+        param_spec['extra'].setdefault('location', '')
+        param_type_location = param_spec['extra']['location']
+        if param_type_location == 'query':
+            query_param_result = {param_name: param_spec['value']['content']}
+        elif param_type_location == 'body':
+            json_body_param_result = {param_name: param_spec['value']['content']}
+        else:
+            raise Exception("param: {param_spec} location type: {param_type_location} invalid")
+
+        return query_param_result, json_body_param_result
 
     @staticmethod
     def set_initial_nodes_result(config: dict) -> list:
@@ -1711,7 +1722,8 @@ class ApiNode(WorkflowNode):
             else:
                 return self.output_params
         except Exception as err:
-            self.running_status = f'failed: {repr(err)}'
+            import traceback
+            self.running_status = f'failed: {traceback.format_exc()}'
             return {}
 
     def run(self, *args, **kwargs) -> str:
