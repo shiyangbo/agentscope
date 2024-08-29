@@ -1780,10 +1780,9 @@ class ApiNode(WorkflowNode):
         # 3. 拆包解析
         # 单个节点调试场景，不解析出参，直接返回调试的结果
         if len(self.output_params_spec) == 0:
-            response_str = json.dumps(response.content, ensure_ascii=False, indent=4)
-            logger.info(f"{self.var_name}, run success,"
-                        f"input params: {self.input_params}, output params: {response_str[:10] + '...'}")
-            self.output_params = {'output_total_json_str': response_str}
+            logger.info(
+                f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+            self.output_params = response.content
             return self.output_params
 
         self.output_params = response.content
