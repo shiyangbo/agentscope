@@ -376,6 +376,12 @@ def node_run() -> Response:
         return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
         return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
+    result = nodes_result[0]["outputs"]
+
+    # hack, api节点特殊处理，结果封装在 output_total_json_str 里
+    if nodes_result[0]["node_type"] == "ApiNode":
+        return jsonify(code=0, result=nodes_result[0]["outputs"]["output_total_json_str"])
+
     return jsonify(code=0, result=nodes_result[0]["outputs"])
 
 

@@ -2,6 +2,7 @@
 """Workflow node opt."""
 import base64
 import json
+import traceback
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import List, Optional
@@ -1264,6 +1265,7 @@ class StartNode(WorkflowNode):
             self.running_status = 'success'
             return self.output_params
         except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
             self.running_status = f'failed: {repr(err)}'
             return {}
 
@@ -1377,6 +1379,7 @@ class EndNode(WorkflowNode):
             # 尾节点，没有输出值
             return {}
         except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
             self.running_status = f'failed: {repr(err)}'
             return {}
 
@@ -1485,6 +1488,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             self.running_status = 'success'
             return self.output_params
         except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
             self.running_status = f'failed: {repr(err)}'
             return {}
 
@@ -1519,8 +1523,15 @@ class PythonServiceUserTypingNode(WorkflowNode):
             self.python_code, use_docker=False, extra_readonly_input_params=self.input_params['params'])
         if response.status == service_status.ServiceExecStatus.ERROR:
             raise Exception(str(response.content))
-        self.output_params = response.content
 
+        # 单个节点调试场景，不解析出参，直接返回调试的结果
+        if len(self.output_params_spec) == 0:
+            self.output_params = response.content
+            logger.info(f"{self.var_name}, run success,"
+                        f"input params: {self.input_params}, output params: {self.output_params}")
+            return self.output_params
+
+        self.output_params = response.content
         # 检查返回值是否对应
         for k in self.output_params_spec:
             if k not in self.output_params:
@@ -1713,20 +1724,15 @@ class ApiNode(WorkflowNode):
 
         self.running_status = 'running'
         try:
-            response_str = self.run(*args, **kwargs)
+            self.run(*args, **kwargs)
             self.running_status = 'success'
-
-            if len(self.output_params_spec) == 0:
-                # 特殊情况，单个api节点的调式模式，直接返回response结果，不做拆包解析
-                return response_str
-            else:
-                return self.output_params
+            return self.output_params
         except Exception as err:
-            import traceback
-            self.running_status = f'failed: {traceback.format_exc()}'
+            logger.error(f'{traceback.format_exc()}')
+            self.running_status = f'failed: {repr(err)}'
             return {}
 
-    def run(self, *args, **kwargs) -> str:
+    def run(self, *args, **kwargs):
         params_pool = self.dag_obj.params_pool
         params_pool.setdefault(self.node_id, {})
 
@@ -1770,12 +1776,16 @@ class ApiNode(WorkflowNode):
                                params=self.input_params_for_query, json=self.input_params_for_body)
         if response.status == service_status.ServiceExecStatus.ERROR:
             raise Exception(str(response.content))
-        response_str = json.dumps(response.content, ensure_ascii=False, indent=4)
 
         # 3. 拆包解析
+        # 单个节点调试场景，不解析出参，直接返回调试的结果
         if len(self.output_params_spec) == 0:
-            print(f'{response_str=}')
-            return response_str
+            response_str = json.dumps(response.content, ensure_ascii=False, indent=4)
+            logger.info(f"{self.var_name}, run success,"
+                        f"input params: {self.input_params}, output params: {response_str[:10] + '...'}")
+            self.output_params = {'output_total_json_str': response_str}
+            return self.output_params
+
         self.output_params = response.content
         # 检查返回值是否对应
         for k in self.output_params_spec:
@@ -1785,7 +1795,7 @@ class ApiNode(WorkflowNode):
         params_pool[self.node_id] |= self.output_params
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
-        return response_str
+        return self.output_params
 
 
 NODE_NAME_MAPPING = {
