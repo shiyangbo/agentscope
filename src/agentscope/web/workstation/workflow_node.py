@@ -112,7 +112,7 @@ class ASDiGraph(nx.DiGraph):
         self.uuid = kwargs['uuid']
         self.params_pool = {}
 
-    def generate_python_param(self, param_spec: dict) -> dict:
+    def generate_node_param_real(self, param_spec: dict) -> dict:
         param_name = param_spec['name']
 
         if self.params_pool and param_spec['value']['type'] == 'ref':
@@ -124,12 +124,12 @@ class ASDiGraph(nx.DiGraph):
         return {param_name: param_spec['value']['content']}
 
     @staticmethod
-    def generate_python_param_spec(param_spec: dict) -> dict:
+    def generate_node_param_spec(param_spec: dict) -> dict:
         param_name = param_spec['name']
         return {param_name: param_spec['value']['content']}
 
     @staticmethod
-    def generate_python_param_spec_for_api_input(param_spec: dict) -> (dict, dict):
+    def generate_node_param_spec_for_api_input(param_spec: dict) -> (dict, dict):
         query_param_result, json_body_param_result = {}, {}
 
         param_name = param_spec['name']
@@ -1295,7 +1295,7 @@ class StartNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = self.dag_obj.generate_python_param(param_spec)
+            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
             self.output_params |= param_one_dict
 
         # 2. 解析实际的取值
@@ -1406,7 +1406,7 @@ class EndNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = self.dag_obj.generate_python_param(param_spec)
+            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
             self.input_params |= param_one_dict
 
         # 注意，尾节点不需要再放到全局变量池里
@@ -1515,7 +1515,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = self.dag_obj.generate_python_param(param_spec)
+            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
             self.input_params['params'] |= param_one_dict
 
         # 2. 运行python解释器代码
@@ -1601,7 +1601,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
+            param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
         return {
@@ -1707,7 +1707,7 @@ class ApiNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = self.dag_obj.generate_python_param_spec(param_spec)
+            param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
         return {
@@ -1759,7 +1759,7 @@ class ApiNode(WorkflowNode):
             #     }
             # }
             param_one_dict_for_query, param_one_dict_for_body \
-                = self.dag_obj.generate_python_param_spec_for_api_input(param_spec)
+                = ASDiGraph.generate_node_param_spec_for_api_input(param_spec)
 
             if not isinstance(param_one_dict_for_query, dict):
                 raise Exception("input param: {param_one_dict_for_query} type not dict")
