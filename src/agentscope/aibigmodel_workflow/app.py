@@ -28,27 +28,25 @@ from flask import (
 from loguru import logger
 import sqlite3
 import uuid
+import yaml
 
 from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 
-# DIALECT = 'mysql'
-# DRIVER = 'pymysql'
-# USERNAME = 'root'
-# PASSWORD = '2292558Huawei'
-# HOST = '127.0.0.1'
-# PORT = '3306'
-# DATABASE = 'agentscope'
+# 读取 YAML 文件
+with open('/agentscope/agentscope/src/agentscope/aibigmodel_workflow/sql_config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
-DIALECT = 'mysql'
-DRIVER = 'pymysql'
-USERNAME = 'big_model_user'
-PASSWORD = 'i7szGnGZZ08GuKaaY4Lg'
-HOST = '192.168.1.215'
-PORT = '5005'
-DATABASE = 'big_model_db'
+# 从 YAML 文件中提取参数
+DIALECT = config['DIALECT']
+DRIVER = config['DRIVER']
+USERNAME = config['USERNAME']
+PASSWORD = config['PASSWORD']
+HOST = config['HOST']
+PORT = config['PORT']
+DATABASE = config['DATABASE']
 
 SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, DRIVER, USERNAME, PASSWORD, HOST, PORT,
                                                                        DATABASE)
@@ -57,8 +55,8 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_POOL_SIZE'] = 5
 app.config['SQLALCHEMY_MAX_OVERFLOW'] = 10
-app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
-app.config['SQLALCHEMY_POOL_RECYCLE'] = 3600
+app.config['SQLALCHEMY_POOL_TIMEOUT'] = 60
+app.config['SQLALCHEMY_POOL_RECYCLE'] = 30
 app.config['SQLALCHEMY_POOL_PRE_PING'] = True
 app.config['SQLALCHEMY_ECHO'] = False
 
@@ -409,7 +407,7 @@ def workflow_run() -> Response:
     logger.info(f"execute_result: {execute_result}")
     execute_result = json.dumps(execute_result)
     if not execute_result:
-        abort(400, f"execute result [{dag.uuid}] not exists")
+        return jsonify({"code": 400, "message": "execute result not exists"})
     # 数据库存储
     try:
         db.session.add(
@@ -468,7 +466,7 @@ def workflow_save() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             raise e
-
+    db.session.close()
     return jsonify({"code": 0, "userID": user_id, "message": "Workflow file saved successfully"})
 
 
@@ -506,7 +504,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
 
     workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id).first()
     if not workflow_result:
-        abort(400, f"workflow_result [{execute_id}] not exists")
+        return jsonify({"code": 400, "message": "workflow_result not exists"})
 
     workflow_result.execute_result = json.loads(workflow_result.execute_result)
     return jsonify(
