@@ -53,12 +53,13 @@ SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, 
 print(SQLALCHEMY_DATABASE_URI)
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_POOL_SIZE'] = 5
-app.config['SQLALCHEMY_MAX_OVERFLOW'] = 10
-app.config['SQLALCHEMY_POOL_TIMEOUT'] = 60
-app.config['SQLALCHEMY_POOL_RECYCLE'] = 30
-app.config['SQLALCHEMY_POOL_PRE_PING'] = True
-app.config['SQLALCHEMY_ECHO'] = False
+app.config['SQLALCHEMY_ECHO'] = True
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    'pool_size': 5,
+    'pool_timeout': 30,
+    'pool_recycle': -1,
+    'pool_pre_ping': True
+}
 
 db = SQLAlchemy()
 db.init_app(app)
@@ -466,7 +467,6 @@ def workflow_save() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             raise e
-    db.session.close()
     return jsonify({"code": 0, "userID": user_id, "message": "Workflow file saved successfully"})
 
 
