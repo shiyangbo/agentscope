@@ -1768,13 +1768,13 @@ class ApiNode(WorkflowNode):
         # 2. 使用 api_request 函数进行 API 请求设置
         response = api_request(url=self.api_url, method=self.api_type, headers=self.api_header,
                                params=self.input_params_for_query, json=self.input_params_for_body)
-        print(f'{response=}')
         if response.status == service_status.ServiceExecStatus.ERROR:
             raise Exception(str(response.content))
         response_str = json.dumps(response.content, ensure_ascii=False, indent=4)
 
         # 3. 拆包解析
         if len(self.output_params_spec) == 0:
+            print(f'{response_str=}')
             return response_str
         self.output_params = response.content
         # 检查返回值是否对应
