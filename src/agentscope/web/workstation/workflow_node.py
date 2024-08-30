@@ -123,27 +123,29 @@ class ASDiGraph(nx.DiGraph):
 
         return {param_name: param_spec['value']['content']}
 
-    @staticmethod
-    def generate_node_param_spec(param_spec: dict) -> dict:
-        param_name = param_spec['name']
-        return {param_name: param_spec['value']['content']}
-
-    @staticmethod
-    def generate_node_param_spec_for_api_input(param_spec: dict) -> (dict, dict):
+    def generate_node_param_real_for_api_input(self, param_spec: dict) -> (dict, dict):
         query_param_result, json_body_param_result = {}, {}
 
         param_name = param_spec['name']
         param_spec.setdefault('extra', {})
         param_spec['extra'].setdefault('location', '')
         param_type_location = param_spec['extra']['location']
+
         if param_type_location == 'query':
-            query_param_result = {param_name: param_spec['value']['content']}
+            param_result = self.generate_node_param_real(param_spec)
+            query_param_result = param_result
         elif param_type_location == 'body':
-            json_body_param_result = {param_name: param_spec['value']['content']}
+            param_result = self.generate_node_param_real(param_spec)
+            json_body_param_result = param_result
         else:
             raise Exception("param: {param_spec} location type: {param_type_location} invalid")
 
         return query_param_result, json_body_param_result
+
+    @staticmethod
+    def generate_node_param_spec(param_spec: dict) -> dict:
+        param_name = param_spec['name']
+        return {param_name: param_spec['value']['content']}
 
     @staticmethod
     def set_initial_nodes_result(config: dict) -> list:
@@ -1759,7 +1761,7 @@ class ApiNode(WorkflowNode):
             #     }
             # }
             param_one_dict_for_query, param_one_dict_for_body \
-                = ASDiGraph.generate_node_param_spec_for_api_input(param_spec)
+                = self.dag_obj.generate_node_param_real_for_api_input(param_spec)
 
             if not isinstance(param_one_dict_for_query, dict):
                 raise Exception("input param: {param_one_dict_for_query} type not dict")
