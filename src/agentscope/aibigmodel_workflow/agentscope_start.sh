@@ -1,5 +1,5 @@
 #!/bin/bash
-rm -rf /ainfs_huhe_dev/agentscope_code/agentscope/src/agentscope/aibigmodel_workflow/ sql_config.yaml
+rm -rf /ainfs_huhe_dev/agentscope_code/agentscope/src/agentscope/aibigmodel_workflow/sql_config.yaml
 cp -r /ainfs_huhe_dev/agentscope_code/sql_config.yaml /ainfs_huhe_dev/agentscope_code/agentscope/src/agentscope/aibigmodel_workflow/
 container_id=$(docker ps -a --filter "name=agentscope_workflow" -q)
 

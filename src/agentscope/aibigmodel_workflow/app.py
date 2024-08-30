@@ -47,6 +47,7 @@ PASSWORD = config['PASSWORD']
 HOST = config['HOST']
 PORT = config['PORT']
 DATABASE = config['DATABASE']
+SERVICE_URL = config['SERVICE_URL']
 
 SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, DRIVER, USERNAME, PASSWORD, HOST, PORT,
                                                                        DATABASE)
@@ -84,6 +85,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     __tablename__ = "workflow_info"
     id = db.Column(db.String(100), primary_key=True)  # ID
     user_id = db.Column(db.String(100))  # 用户ID
+    workflow_id = db.Column(db.String(100))  # workflowID
     config_name = db.Column(db.String(100))
     config_content = db.Column(db.Text)
 
@@ -95,168 +97,11 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.String(100), primary_key=True)  # ID
     user_id = db.Column(db.String(100))  # 用户ID
     plugin_name = db.Column(db.String(100))  # 插件名称
-    model_name = db.Column(db.String(100))  # 插件英文名称
+    plugin_en_name = db.Column(db.String(100))  # 插件英文名称
     plugin_desc = db.Column(db.Text)  # 插件描述
     plugin_config = db.Column(db.Text)  # 插件dag配置文件
     plugin_field = db.Column(db.String(100))  # 插件领域
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
-
-
-def _check_and_convert_id_type(db_path: str, table_name: str) -> None:
-    """Check and convert the type of the 'id' column in the specified table
-    from INTEGER to VARCHAR.
-
-    Args:
-        db_path (str): The path of the SQLite database file.
-        table_name (str): The name of the table to be checked and converted.
-    """
-
-    if not os.path.exists(db_path):
-        return
-
-    # Connect to the SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    try:
-        # Obtain the table structure information
-        cursor.execute(f"PRAGMA table_info({table_name});")
-        columns = cursor.fetchall()
-
-        # Look for the type of the 'id' column
-        id_column = [col for col in columns if col[1] == "id"]
-        if not id_column:
-            return
-
-        id_type = id_column[0][2].upper()
-        if id_type in ["VARCHAR", "TEXT"]:
-            return
-
-        if id_type == "INTEGER":
-            # Temporary table name
-            temp_table_name = table_name + "_temp"
-
-            # Create a new table and change the type of the 'id' column to
-            # VARCHAR
-            create_table_sql = f"CREATE TABLE {temp_table_name} ("
-            for col in columns:
-                col_type = "VARCHAR" if col[1] == "id" else col[2]
-                create_table_sql += f"{col[1]} {col_type}, "
-            create_table_sql = create_table_sql.rstrip(", ") + ");"
-
-            cursor.execute(create_table_sql)
-
-            # Copy data and convert the value of the 'id' column to a string
-            column_names = ", ".join([col[1] for col in columns])
-            column_values = ", ".join(
-                [
-                    f"CAST({col[1]} AS VARCHAR)" if col[1] == "id" else col[1]
-                    for col in columns
-                ],
-            )
-            cursor.execute(
-                f"INSERT INTO {temp_table_name} ({column_names}) "
-                f"SELECT {column_values} FROM {table_name};",
-            )
-
-            # Delete the old table
-            cursor.execute(f"DROP TABLE {table_name};")
-
-            # Rename the new table
-            cursor.execute(
-                f"ALTER TABLE {temp_table_name} RENAME TO {table_name};",
-            )
-
-            conn.commit()
-
-    except sqlite3.Error as e:
-        print(f"SQLite error: {e}")
-    finally:
-        conn.close()
-
-
-def _remove_file_paths(error_trace: str) -> str:
-    """
-    Remove the real traceback when exception happens.
-    """
-    path_regex = re.compile(r'File "(.*?)(?=agentscope|app\.py)')
-    cleaned_trace = re.sub(path_regex, 'File "[hidden]/', error_trace)
-
-    return cleaned_trace
-
-
-def _convert_to_py(  # type: ignore[no-untyped-def]
-        content: str,
-        **kwargs,
-) -> Tuple:
-    """
-    Convert json config to python code.
-    """
-    from agentscope.web.workstation.workflow_dag import build_dag
-
-    try:
-        cfg = json.loads(content)
-        logger.info(f"cfg {cfg}")
-        return "True", build_dag(cfg).compile(**kwargs)
-    except Exception as e:
-        return "False", _remove_file_paths(
-            f"Error: {e}\n\n" f"Traceback:\n" f"{traceback.format_exc()}",
-        )
-
-
-@app.route("/convert-to-py", methods=["POST"])
-def _convert_config_to_py() -> Response:
-    """
-    Convert json config to python code and send back.
-    """
-    try:
-        content = request.json.get("data")
-        status, py_code = _convert_to_py(content)
-        return jsonify(py_code=py_code, is_success=status)
-    except Exception as e:
-        return jsonify({"code": 400, "message": repr(e)})
-
-
-def _cleanup_process(proc: subprocess.Popen) -> None:
-    """Clean up the process for running application started by workstation."""
-    proc.wait()
-    app.logger.debug(f"The process with pid {proc.pid} is closed")
-
-
-@app.route("/convert-to-py-and-run", methods=["POST"])
-def _convert_config_to_py_and_run() -> Response:
-    """
-    Convert json config to python code and run.
-    """
-    content = request.json.get("data")
-    studio_url = request.url_root.rstrip("/")
-    run_id = _runtime.generate_new_runtime_id()
-    logger.info(f"Loading configs from {content}")
-    status, py_code = _convert_to_py(
-        content,
-        runtime_id=run_id,
-        studio_url=studio_url,
-    )
-
-    if status == "True":
-        try:
-            with tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=".py",
-                    mode="w+t",
-            ) as tmp:
-                tmp.write(py_code)
-                tmp.flush()
-                proc = subprocess.Popen(  # pylint: disable=R1732
-                    ["python", tmp.name],
-                )
-                threading.Thread(target=_cleanup_process, args=(proc,)).start()
-        except Exception as e:
-            status, py_code = "False", _remove_file_paths(
-                f"Error: {e}\n\n" f"Traceback:\n" f"{traceback.format_exc()}",
-            )
-    return jsonify(py_code=py_code, is_success=status, run_id=run_id)
-
 
 # 发布调试成功的workflow
 @app.route("/plugin/publish", methods=["POST"])
@@ -281,7 +126,7 @@ def plugin_publish() -> Response:
                 id=str(id),
                 user_id=user_id,
                 plugin_name=data["pluginName"],
-                model_name=data["modelName"],
+                plugin_en_name=data["pluginENName"],
                 plugin_desc=data["pluginDesc"],
                 plugin_config=plugin_config,
                 plugin_field=data["pluginField"],
@@ -435,14 +280,15 @@ def workflow_save() -> Response:
     # request 参数获取
     data = request.json
     id = uuid.uuid4()
-    filename = data.get("filename")
+    config_name = data.get("configName")
     workflow_str = data.get("workflowSchema")
+    workflow_id = data.get("workflowID")
     user_id = data.get("userID")
-    if not filename or not user_id:
-        return jsonify({"code": 400, "message": "Filename and userID is required"})
+    if not config_name or not user_id:
+        return jsonify({"code": 400, "message": "configName and userID is required"})
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
-        _WorkflowTable.config_name == filename
+        _WorkflowTable.config_name == config_name
     ).all()
     # 不存在记录则创建，存在则更新
     if not workflow_results:
@@ -452,7 +298,8 @@ def workflow_save() -> Response:
                 _WorkflowTable(
                     id=id,
                     user_id=user_id,
-                    config_name=filename,
+                    workflow_id=workflow_id,
+                    config_name=config_name,
                     config_content=workflow,
                 ),
             )
@@ -463,7 +310,7 @@ def workflow_save() -> Response:
     else:
         try:
             workflow = json.dumps(workflow_str)
-            db.session.query(_WorkflowTable).filter_by(id=user_id, config_name=filename).update(
+            db.session.query(_WorkflowTable).filter_by(id=user_id, config_name=config_name).update(
                 {_WorkflowTable.config_content: workflow})
             db.session.commit()
         except SQLAlchemyError as e:
@@ -477,20 +324,19 @@ def workflow_get() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
-    data = request.json
-    filename = data.get("filename")
-    user_id = data.get("userID")
-    if not filename or not user_id:
-        return jsonify({"error": "Filename and userID is required"}), 400
+    workflow_id = request.args.get('workflowID')
+    if not workflow_id:
+        return jsonify({"error": "workflowID is required"}), 400
 
-    workflow_config = _WorkflowTable.query.filter_by(user_id=user_id, config_name=filename).first()
+    workflow_config = _WorkflowTable.query.filter_by(workflow_id=workflow_id).first()
     if not workflow_config:
         return jsonify({"code": 400, "message": "workflow_config not exists"})
 
+    config_content = json.loads(workflow_config.config_content)
     return jsonify(
         {
             "code": 0,
-            "result": workflow_config.config_content,
+            "result": config_content,
             "message": ""
         },
     )
@@ -501,8 +347,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow process results from the specified JSON file.
     """
-    data = request.json
-    execute_id = data.get("executeID")
+    execute_id = request.args.get("executeID")
 
     workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id).first()
     if not workflow_result:
@@ -604,15 +449,15 @@ def standardize_single_node_format(data: dict) -> dict:
 def plugin_desc_config_generator(data: dict) -> dict:
     plugin_desc_config = {
         "name_for_human": data["pluginName"],
-        "name_for_model": data["modelName"],
+        "name_for_model": data["pluginENName"],
         "desc_for_human": data["pluginDesc"],
         "desc_for_model": data["pluginDesc"],
         "field": data["pluginField"],
         "question_example": data["pluginQuestionExample"],
-        "answer_example": data["modelName"],
+        "answer_example": data["pluginENName"],
         "confirm_required": "false",
         "api_info": {
-            "url": "http://127.0.0.1:5001/plugin/run",  # 后续改为服务部署的url地址
+            "url": SERVICE_URL,  # 后续改为服务部署的url地址
             "method": "post",
             "content_type": "application/json",
             "input_params": [
