@@ -1295,7 +1295,7 @@ class StartNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
+            param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.output_params |= param_one_dict
 
         # 2. 解析实际的取值
@@ -1406,7 +1406,7 @@ class EndNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
+            param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.input_params |= param_one_dict
 
         # 注意，尾节点不需要再放到全局变量池里
@@ -1515,7 +1515,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
-            param_one_dict = ASDiGraph.generate_node_param_real(param_spec)
+            param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.input_params['params'] |= param_one_dict
 
         # 2. 运行python解释器代码
