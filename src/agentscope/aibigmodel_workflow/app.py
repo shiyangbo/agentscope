@@ -75,33 +75,33 @@ _RUNS_DIRS = []
 
 class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     """Execute workflow."""
-    __tablename__ = "execute_info"
+    __tablename__ = "llm_execute_info"
     execute_id = db.Column(db.String(100), primary_key=True)  # 运行ID
     execute_result = db.Column(db.Text)
 
 
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     """Workflow store table."""
-    __tablename__ = "workflow_info"
+    __tablename__ = "llm_workflow_info"
     id = db.Column(db.String(100), primary_key=True)  # workflowID
     user_id = db.Column(db.String(100))  # 用户ID
     config_name = db.Column(db.String(100))
-    config_en_name = db.Column(db.String(100))
+    config_en_name = db.Column(db.String(100), unique=True)
     config_desc = db.Column(db.Text)
-    config_content = db.Column(db.Text)
+    dag_content = db.Column(db.Text)
     status = db.Column(db.String(10))
 
 
 class _PluginTable(db.Model):  # type: ignore[name-defined]
     """Plugin table."""
-    __tablename__ = "plugin_info"
+    __tablename__ = "llm_plugin_info"
     __table_args__ = {'extend_existing': True}
     id = db.Column(db.String(100), primary_key=True)  # ID
     user_id = db.Column(db.String(100))  # 用户ID
     plugin_name = db.Column(db.String(100))  # 插件名称
     plugin_en_name = db.Column(db.String(100))  # 插件英文名称
     plugin_desc = db.Column(db.Text)  # 插件描述
-    plugin_config = db.Column(db.Text)  # 插件dag配置文件
+    dag_content = db.Column(db.Text)  # 插件dag配置文件
     plugin_field = db.Column(db.String(100))  # 插件领域
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
 
@@ -119,7 +119,6 @@ def plugin_publish() -> Response:
     ).first()
     if not workflow_result:
         return jsonify({"code": 400, "message": "No workflow config data exists"})
-    print(workflow_result)
     # 插件描述信息生成，对接智能体格式
     data = {
         "pluginName": workflow_result.config_name,
@@ -147,7 +146,7 @@ def plugin_publish() -> Response:
                 plugin_name=workflow_result.config_name,
                 plugin_en_name=workflow_result.config_en_name,
                 plugin_desc=workflow_result.config_desc,
-                plugin_config=workflow_result.config_content,
+                dag_content=workflow_result.dag_content,
                 plugin_field=data["pluginField"],
                 plugin_desc_config=plugin_desc_config
             ),
@@ -179,7 +178,7 @@ def plugin_run() -> Response:
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-        config = json.loads(plugin.plugin_config)
+        config = json.loads(plugin.dag_content)
         converted_config = workflow_format_convert(config)
         dag = build_dag(converted_config)
     except Exception as e:
@@ -236,8 +235,6 @@ def node_run() -> Response:
 
     # content中的data内容
     result, nodes_result = dag.run_with_param(content, nodes)
-    print("total input", result)
-    print("total nodes_result", nodes_result)
     if len(nodes_result) != 1:
         return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
@@ -338,6 +335,8 @@ def workflow_save() -> Response:
     # request 参数获取
     data = request.json
     config_name = data.get("configName")
+    config_en_name = data.get("configENName")
+    config_desc = data.get("configDesc")
     workflow_str = data.get("workflowSchema")
     workflow_id = data.get("workflowID")
     user_id = request.headers.get("X-User-Id")
@@ -350,14 +349,18 @@ def workflow_save() -> Response:
     ).all()
     # 不存在记录则报错，存在则更新
     if workflow_results:
+        # 查询数据库中是否有除这个workflow_id以外config_en_name相同的记录
         try:
             workflow = json.dumps(workflow_str)
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
-                {_WorkflowTable.config_content: workflow})
+                {_WorkflowTable.config_name: config_name,
+                 _WorkflowTable.config_en_name: config_en_name,
+                 _WorkflowTable.config_desc: config_desc,
+                 _WorkflowTable.dag_content: workflow})
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            raise e
+            return jsonify({"code": 500, "message": str(e)})
         return jsonify({"code": 0, "workflowID": workflow_id, "message": "Workflow file saved successfully"})
     else:
         return jsonify({"code": 500, "message": "Internal Server Error"})
@@ -376,11 +379,11 @@ def workflow_get() -> tuple[Response, int] | Response:
     if not workflow_config:
         return jsonify({"code": 400, "message": "workflow_config not exists"})
 
-    config_content = json.loads(workflow_config.config_content)
+    dag_content = json.loads(workflow_config.dag_content)
     return jsonify(
         {
             "code": 0,
-            "result": config_content,
+            "result": dag_content,
             "message": ""
         },
     )
