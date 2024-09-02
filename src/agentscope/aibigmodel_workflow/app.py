@@ -83,11 +83,13 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     """Workflow store table."""
     __tablename__ = "workflow_info"
-    id = db.Column(db.String(100), primary_key=True)  # ID
+    id = db.Column(db.String(100), primary_key=True)  # workflowID
     user_id = db.Column(db.String(100))  # 用户ID
-    workflow_id = db.Column(db.String(100))  # workflowID
     config_name = db.Column(db.String(100))
+    config_en_name = db.Column(db.String(100))
+    config_desc = db.Column(db.Text)
     config_content = db.Column(db.Text)
+    status = db.Column(db.String(10))
 
 
 class _PluginTable(db.Model):  # type: ignore[name-defined]
@@ -103,36 +105,55 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     plugin_field = db.Column(db.String(100))  # 插件领域
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
 
+
 # 发布调试成功的workflow
 @app.route("/plugin/publish", methods=["POST"])
 def plugin_publish() -> Response:
-    id = uuid.uuid4()
-    data = request.json.get("data")
-    user_id = request.json.get("userID")
-    plugin_config = json.dumps(data["pluginConfig"])
-    # 数据库存储
+    workflow_id = request.json.get("workflowID")
+    plugin_field = request.json.get("pluginField")
+    plugin_question = request.json.get("pluginQuestionExample")
+    user_id = request.headers.get("X-User-Id")
+    # 查询workflow_info表获取插件信息
+    workflow_result = _WorkflowTable.query.filter(
+        _WorkflowTable.id == workflow_id
+    ).first()
+    if not workflow_result:
+        return jsonify({"code": 400, "message": "No workflow config data exists"})
+    print(workflow_result)
+    # 插件描述信息生成，对接智能体格式
+    data = {
+        "pluginName": workflow_result.config_name,
+        "pluginDesc": workflow_result.config_desc,
+        "pluginENName": workflow_result.config_en_name,
+        "pluginField": plugin_field,
+        "pluginQuestionExample": plugin_question
+    }
     plugin_desc_config = plugin_desc_config_generator(data)
     plugin_desc_config = json.dumps(plugin_desc_config)
-    # 同一用户的发布的插件名称唯一
+    # 数据库存储
     plugin = _PluginTable.query.filter(
         _PluginTable.user_id == user_id,
-        _PluginTable.plugin_name == data["pluginName"],
+        _PluginTable.plugin_en_name == data["pluginENName"],
     ).all()
+    # 插件的英文名称唯一
     if len(plugin) > 0:
         return jsonify({"code": 400, "message": "Multiple records found for the userID"})
+
     try:
         db.session.add(
             _PluginTable(
-                id=str(id),
+                id=workflow_id,
                 user_id=user_id,
-                plugin_name=data["pluginName"],
-                plugin_en_name=data["pluginENName"],
-                plugin_desc=data["pluginDesc"],
-                plugin_config=plugin_config,
+                plugin_name=workflow_result.config_name,
+                plugin_en_name=workflow_result.config_en_name,
+                plugin_desc=workflow_result.config_desc,
+                plugin_config=workflow_result.config_content,
                 plugin_field=data["pluginField"],
                 plugin_desc_config=plugin_desc_config
             ),
         )
+        db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
+            {_WorkflowTable.status: "published"})
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -272,6 +293,43 @@ def workflow_run() -> Response:
     return jsonify(code=0, result=result, executeID=dag.uuid)
 
 
+@app.route("/workflow/create", methods=["POST"])
+def workflow_create() -> Response:
+    # request 参数获取
+    data = request.json
+    config_name = data.get("configName")
+    config_en_name = data.get("configENName")
+    config_desc = data.get("configDesc")
+    if not config_name or not config_en_name or not config_desc:
+        return jsonify({"code": 400, "message": "configName,configENName,configDesc is required"})
+    user_id = request.headers.get("X-User-Id")
+    # 查询表中同一用户下是否有重复config_en_name的记录
+    workflow_results = _WorkflowTable.query.filter(
+        _WorkflowTable.user_id == user_id,
+        _WorkflowTable.config_en_name == config_en_name
+    ).all()
+    if not workflow_results:
+        try:
+            workflow_id = uuid.uuid4()
+            db.session.add(
+                _WorkflowTable(
+                    id=str(workflow_id),
+                    user_id=user_id,
+                    config_name=config_name,
+                    config_en_name=config_en_name,
+                    config_desc=config_desc,
+                    status="draft"
+                ),
+            )
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            raise e
+        return jsonify({"code": 0, "message": "Workflow file saved successfully"})
+    else:
+        return jsonify({"code": 400, "message": "该英文名称已存在, 请重新填写"})
+
+
 @app.route("/workflow/save", methods=["POST"])
 def workflow_save() -> Response:
     """
@@ -279,44 +337,30 @@ def workflow_save() -> Response:
     """
     # request 参数获取
     data = request.json
-    id = uuid.uuid4()
     config_name = data.get("configName")
     workflow_str = data.get("workflowSchema")
     workflow_id = data.get("workflowID")
-    user_id = data.get("userID")
-    if not config_name or not user_id:
-        return jsonify({"code": 400, "message": "configName and userID is required"})
+    user_id = request.headers.get("X-User-Id")
+    if not workflow_id or not user_id:
+        return jsonify({"code": 400, "message": "workflowID and userID is required"})
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
-        _WorkflowTable.config_name == config_name
+        _WorkflowTable.config_name == config_name,
+        _WorkflowTable.id == workflow_id
     ).all()
-    # 不存在记录则创建，存在则更新
-    if not workflow_results:
+    # 不存在记录则报错，存在则更新
+    if workflow_results:
         try:
             workflow = json.dumps(workflow_str)
-            db.session.add(
-                _WorkflowTable(
-                    id=id,
-                    user_id=user_id,
-                    workflow_id=workflow_id,
-                    config_name=config_name,
-                    config_content=workflow,
-                ),
-            )
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            raise e
-    else:
-        try:
-            workflow = json.dumps(workflow_str)
-            db.session.query(_WorkflowTable).filter_by(id=user_id, config_name=config_name).update(
+            db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
                 {_WorkflowTable.config_content: workflow})
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
             raise e
-    return jsonify({"code": 0, "userID": user_id, "message": "Workflow file saved successfully"})
+        return jsonify({"code": 0, "workflowID": workflow_id, "message": "Workflow file saved successfully"})
+    else:
+        return jsonify({"code": 500, "message": "Internal Server Error"})
 
 
 @app.route("/workflow/get", methods=["GET"])
