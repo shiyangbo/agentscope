@@ -274,7 +274,7 @@ def plugin_run_for_bigmodel() -> Response:
         return jsonify({"code": 400, "message": str(e), "data": None})
 
     logger.info(f"execute_result: {execute_result}")
-    return jsonify(code=200, data=result)
+    return result
 
 @app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
