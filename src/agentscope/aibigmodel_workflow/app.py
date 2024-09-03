@@ -408,7 +408,7 @@ def workflow_get() -> tuple[Response, int] | Response:
         },
     )
 
-
+@app.route("/workflow/status", methods=["GET"])
 def workflow_get_process() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow process results from the specified JSON file.
