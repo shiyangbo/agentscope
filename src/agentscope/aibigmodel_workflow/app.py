@@ -217,10 +217,58 @@ def plugin_run() -> Response:
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        raise e
+        return jsonify({"code": 400, "message": str(e)})
+
     logger.info(f"execute_result: {execute_result}")
     return jsonify(code=0, result=result, executeID=dag.uuid)
 
+@app.route("/plugin/api/run_for_bigmodel", methods=["POST"])
+def plugin_run_for_bigmodel() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    plugin_en_name = request.json.get("plugin_en_name")
+    plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
+    if not plugin:
+        return jsonify({"code": 400, "message": "plugin not exists", "data": None})
+
+    try:
+        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+        config = json.loads(plugin.dag_content)
+        converted_config = workflow_format_convert(config)
+        dag = build_dag(converted_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e), "data": None})
+
+    # 调用运行dag
+    start_time = time.time()
+    result, nodes_result = dag.run_with_param(content, config)
+    end_time = time.time()
+    executed_time = round(end_time - start_time, 3)
+    # 获取workflow与各节点的执行结果
+    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    if not execute_result:
+        return jsonify({"code": 400, "message": "execute result not exists", "data": None})
+
+    execute_result = json.dumps(execute_result)
+    # 数据库存储
+    try:
+        db.session.add(
+            _ExecuteTable(
+                execute_id=dag.uuid,
+                execute_result=execute_result,
+            ),
+        )
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"code": 400, "message": str(e), "data": None})
+
+    logger.info(f"execute_result: {execute_result}")
+    return jsonify(code=200, data={'executeID': dag.uuid, "result": result})
 
 @app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
