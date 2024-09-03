@@ -222,14 +222,16 @@ def plugin_run() -> Response:
     logger.info(f"execute_result: {execute_result}")
     return jsonify(code=0, result=result, executeID=dag.uuid)
 
-@app.route("/plugin/api/run_for_bigmodel", methods=["POST"])
-def plugin_run_for_bigmodel() -> Response:
+@app.route("/plugin/api/run_for_bigmodel/<plugin_en_name>", methods=["POST"])
+def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     """
     Input query data and get response.
     """
+    if plugin_en_name == "":
+        return jsonify({"code": 400, "message": "plugin_en_name empty", "data": None})
+
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    plugin_en_name = request.json.get("plugin_en_name")
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
         return jsonify({"code": 400, "message": "plugin not exists", "data": None})
