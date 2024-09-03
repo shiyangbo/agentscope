@@ -248,7 +248,7 @@ def plugin_run_for_bigmodel() -> Response:
     # 检查是否如期运行
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
-        if node_status != 'success':
+        if 'failed' in node_status:
             return jsonify({"code": 400, "message": node_status, "data": None})
 
     end_time = time.time()
@@ -274,7 +274,7 @@ def plugin_run_for_bigmodel() -> Response:
         return jsonify({"code": 400, "message": str(e), "data": None})
 
     logger.info(f"execute_result: {execute_result}")
-    return jsonify(code=200, data={'executeID': dag.uuid, "result": result})
+    return jsonify(code=200, data=result)
 
 @app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
