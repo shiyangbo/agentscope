@@ -245,6 +245,12 @@ def plugin_run_for_bigmodel() -> Response:
     # 调用运行dag
     start_time = time.time()
     result, nodes_result = dag.run_with_param(content, config)
+    # 检查是否如期运行
+    for node_dict in nodes_result:
+        node_status = node_dict['node_status']
+        if node_status != 'success':
+            return jsonify({"code": 400, "message": node_status, "data": None})
+
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
