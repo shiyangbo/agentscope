@@ -95,7 +95,6 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
 class _PluginTable(db.Model):  # type: ignore[name-defined]
     """Plugin table."""
     __tablename__ = "llm_plugin_info"
-    __table_args__ = {'extend_existing': True}
     id = db.Column(db.String(100), primary_key=True)  # ID
     user_id = db.Column(db.String(100))  # 用户ID
     plugin_name = db.Column(db.String(100))  # 插件名称
@@ -170,9 +169,9 @@ def plugin_run() -> Response:
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
-    user_id = request.json.get("userID")
-    plugin_name = request.json.get("pluginName")
-    plugin = _PluginTable.query.filter_by(plugin_name=plugin_name, user_id=user_id).first()
+    user_id = request.headers.get("X-User-Id")
+    workflow_id = request.json.get("workflowID")
+    plugin = _PluginTable.query.filter_by(id=workflow_id, user_id=user_id).first()
     if not plugin:
         return jsonify({"code": 400, "message": "plugin not exists"})
 
@@ -322,9 +321,29 @@ def workflow_create() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             raise e
-        return jsonify({"code": 0, "message": "Workflow file saved successfully"})
+        return jsonify({"code": 0, "workflowID": str(workflow_id), "message": "Workflow file saved successfully"})
     else:
         return jsonify({"code": 400, "message": "该英文名称已存在, 请重新填写"})
+
+
+@app.route("/workflow/delete", methods=["POST"])
+def workflow_delete() -> Response:
+    workflow_id = request.args.get("workflowID")
+    user_id = request.headers.get("X-User-Id")
+    workflow_results = _WorkflowTable.query.filter(
+        _WorkflowTable.user_id == user_id,
+        _WorkflowTable.id == workflow_id
+    ).all()
+    if workflow_results:
+        try:
+            db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).delete()
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"code": 500, "message": str(e)})
+        return jsonify({"code": 0, "message": "Workflow file deleted successfully"})
+    else:
+        return jsonify({"code": 400, "message": "Record not found"})
 
 
 @app.route("/workflow/save", methods=["POST"])
@@ -371,11 +390,12 @@ def workflow_get() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
+    user_id = request.headers.get('X-User-Id')
     workflow_id = request.args.get('workflowID')
     if not workflow_id:
         return jsonify({"error": "workflowID is required"}), 400
 
-    workflow_config = _WorkflowTable.query.filter_by(workflow_id=workflow_id).first()
+    workflow_config = _WorkflowTable.query.filter_by(id=workflow_id, user_id=user_id).first()
     if not workflow_config:
         return jsonify({"code": 400, "message": "workflow_config not exists"})
 
@@ -389,7 +409,6 @@ def workflow_get() -> tuple[Response, int] | Response:
     )
 
 
-@app.route("/workflow/status", methods=["GET"])
 def workflow_get_process() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow process results from the specified JSON file.
