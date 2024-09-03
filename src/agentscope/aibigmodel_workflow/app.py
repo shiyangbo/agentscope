@@ -38,9 +38,8 @@ from flask_socketio import SocketIO
 app = Flask(__name__)
 
 # 读取 YAML 文件
-test_without_mysql = True
-from agentscope.utils.tools import _is_windows
-if _is_windows and test_without_mysql:
+test_without_mysql = False
+if test_without_mysql:
     # Set the cache directory
     from pathlib import Path
     _cache_dir = Path.home() / ".cache" / "agentscope-studio"
