@@ -118,7 +118,7 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 
 
 # 发布调试成功的workflow
-@app.route("/plugin/publish", methods=["POST"])
+@app.route("plugin/api/publish", methods=["POST"])
 def plugin_publish() -> Response:
     workflow_id = request.json.get("workflowID")
     plugin_field = request.json.get("pluginField")
@@ -174,7 +174,7 @@ def plugin_publish() -> Response:
 
 
 # 已经发布的workflow直接运行
-@app.route("/plugin/run", methods=["POST"])
+@app.route("plugin/api/run", methods=["POST"])
 def plugin_run() -> Response:
     """
     Input query data and get response.
