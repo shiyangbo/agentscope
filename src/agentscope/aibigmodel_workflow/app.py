@@ -38,10 +38,8 @@ from flask_socketio import SocketIO
 app = Flask(__name__)
 
 # 读取 YAML 文件
-test_without_mysql = True
-from agentscope.utils.tools import _is_windows
-
-if _is_windows and test_without_mysql:
+test_without_mysql = False
+if test_without_mysql:
     # Set the cache directory
     from pathlib import Path
 
@@ -231,10 +229,67 @@ def plugin_run() -> Response:
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        raise e
+        return jsonify({"code": 400, "message": str(e)})
+
     logger.info(f"execute_result: {execute_result}")
     return jsonify(code=0, result=result, executeID=dag.uuid)
 
+@app.route("/plugin/api/run_for_bigmodel/<plugin_en_name>", methods=["POST"])
+def plugin_run_for_bigmodel(plugin_en_name) -> Response:
+    """
+    Input query data and get response.
+    """
+    if plugin_en_name == "":
+        return jsonify({"code": 400, "message": "plugin_en_name empty", "data": None})
+
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    poi = request.json.get("poi")
+    keywords = request.json.get("keywords")
+    plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
+    if not plugin:
+        return jsonify({"code": 400, "message": "plugin not exists", "data": None})
+
+    try:
+        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+        config = json.loads(plugin.dag_content)
+        converted_config = workflow_format_convert(config)
+        dag = build_dag(converted_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e), "data": None})
+
+    # 调用运行dag
+    start_time = time.time()
+    result, nodes_result = dag.run_with_param({'poi': poi, 'keywords': keywords}, config)
+    # 检查是否如期运行
+    for node_dict in nodes_result:
+        node_status = node_dict['node_status']
+        if 'failed' in node_status:
+            return jsonify({"code": 400, "message": node_status, "data": None})
+
+    end_time = time.time()
+    executed_time = round(end_time - start_time, 3)
+    # 获取workflow与各节点的执行结果
+    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    if not execute_result:
+        return jsonify({"code": 400, "message": "execute result not exists", "data": None})
+
+    execute_result = json.dumps(execute_result)
+    # 数据库存储
+    try:
+        db.session.add(
+            _ExecuteTable(
+                execute_id=dag.uuid,
+                execute_result=execute_result,
+            ),
+        )
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"code": 400, "message": str(e), "data": None})
+
+    logger.info(f"execute_result: {execute_result}")
+    return result
 
 @app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
