@@ -132,8 +132,8 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 @app.route("/plugin/api/publish", methods=["POST"])
 def plugin_publish() -> Response:
     workflow_id = request.json.get("workflowID")
-    plugin_field = request.json.get("pluginField")
-    plugin_question = request.json.get("pluginQuestionExample")
+    summary = request.json.get("pluginField")
+    description = request.json.get("pluginQuestionExample")
     user_id = request.headers.get("X-User-Id")
     # 查询workflow_info表获取插件信息
     workflow_result = _WorkflowTable.query.filter(
@@ -146,11 +146,12 @@ def plugin_publish() -> Response:
         "pluginName": workflow_result.config_name,
         "pluginDesc": workflow_result.config_desc,
         "pluginENName": workflow_result.config_en_name,
-        "pluginField": plugin_field,
-        "pluginQuestionExample": plugin_question
+        "pluginField": summary,
+        "pluginQuestionExample": description
     }
     plugin_desc_config = plugin_desc_config_generator(data)
-    plugin_desc_config = json.dumps(plugin_desc_config)
+    plugin_desc_config_json_str = json.dumps(plugin_desc_config)
+
     # 数据库存储
     plugin = _PluginTable.query.filter(
         _PluginTable.user_id == user_id,
@@ -158,7 +159,7 @@ def plugin_publish() -> Response:
     ).all()
     # 插件的英文名称唯一
     if len(plugin) > 0:
-        return jsonify({"code": 400, "message": "Multiple records found for the userID"})
+        return jsonify({"code": 400, "message": f"Multiple records found for plugin en name: {data['pluginENName']}"})
 
     try:
         db.session.add(
@@ -170,7 +171,7 @@ def plugin_publish() -> Response:
                 plugin_desc=workflow_result.config_desc,
                 dag_content=workflow_result.dag_content,
                 plugin_field=data["pluginField"],
-                plugin_desc_config=plugin_desc_config
+                plugin_desc_config=plugin_desc_config_json_str
             ),
         )
         db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
@@ -185,55 +186,6 @@ def plugin_publish() -> Response:
 
 
 # 已经发布的workflow直接运行
-@app.route("/plugin/api/run", methods=["POST"])
-def plugin_run() -> Response:
-    """
-    Input query data and get response.
-    """
-    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    content = request.json.get("data")
-    user_id = request.headers.get("X-User-Id")
-    workflow_id = request.json.get("workflowID")
-    plugin = _PluginTable.query.filter_by(id=workflow_id, user_id=user_id).first()
-    if not plugin:
-        return jsonify({"code": 400, "message": "plugin not exists"})
-
-    try:
-        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-        config = json.loads(plugin.dag_content)
-        converted_config = workflow_format_convert(config)
-        dag = build_dag(converted_config)
-    except Exception as e:
-        return jsonify({"code": 400, "message": repr(e)})
-
-    # 调用运行dag
-    start_time = time.time()
-    result, nodes_result = dag.run_with_param(content, config)
-    end_time = time.time()
-    executed_time = round(end_time - start_time, 3)
-    # 获取workflow与各节点的执行结果
-    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
-    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
-    if not execute_result:
-        return jsonify({"code": 400, "message": "execute result not exists"})
-
-    execute_result = json.dumps(execute_result)
-    # 数据库存储
-    try:
-        db.session.add(
-            _ExecuteTable(
-                execute_id=dag.uuid,
-                execute_result=execute_result,
-            ),
-        )
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 400, "message": str(e)})
-
-    logger.info(f"execute_result: {execute_result}")
-    return jsonify(code=0, result=result, executeID=dag.uuid)
-
 @app.route("/plugin/api/run_for_bigmodel/<plugin_en_name>", methods=["POST"])
 def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     """
@@ -242,9 +194,11 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     if plugin_en_name == "":
         return jsonify({"code": 400, "message": "plugin_en_name empty"})
 
-    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    poi = request.json.get("poi")
-    keywords = request.json.get("keywords")
+    # 大模型的入参适配
+    input_params = request.json
+    if not isinstance(input_params, dict):
+        return jsonify({"code": 400, "message": f"input param type is {type(input_params)}, not dict"})
+
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
         return jsonify({"code": 400, "message": "plugin not exists"})
@@ -259,7 +213,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
 
     # 调用运行dag
     start_time = time.time()
-    result, nodes_result = dag.run_with_param({'poi': poi, 'keywords': keywords}, config)
+    result, nodes_result = dag.run_with_param(input_params, config)
     # 检查是否如期运行
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
@@ -318,6 +272,9 @@ def workflow_run() -> Response:
     """
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
+    if not isinstance(content, dict):
+        return jsonify({"code": 400, "message": f"input param type is {type(content)}, not dict"})
+
     workflow_schema = request.json.get("workflowSchema")
     user_id = request.headers.get("X-User-Id")
     logger.info(f"workflow_schema: {workflow_schema}")
