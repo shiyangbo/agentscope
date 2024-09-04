@@ -465,7 +465,7 @@ def workflow_copy() -> Response:
     if not workflow_id:
         return jsonify({"code": 400, "message": "workflowID and userID is required"})
     # 查找
-    workflow_config = _WorkflowTable.query.filter_by(id=workflow_id).first()
+    workflow_config = _WorkflowTable.query.filter(id=workflow_id).first()
     if workflow_config:
         try:
             config_name = json.loads(workflow_config.config_name)
