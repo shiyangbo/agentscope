@@ -230,9 +230,11 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     if plugin_en_name == "":
         return jsonify({"code": 400, "message": "plugin_en_name empty"})
 
-    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
-    poi = request.json.get("poi")
-    keywords = request.json.get("keywords")
+    # 大模型的入参适配
+    input_params = request.json()
+    if not isinstance(input_params, dict):
+        return jsonify({"code": 400, "message": f"input param type is {type(input_params)}, not dict"})
+
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
         return jsonify({"code": 400, "message": "plugin not exists"})
@@ -247,7 +249,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
 
     # 调用运行dag
     start_time = time.time()
-    result, nodes_result = dag.run_with_param({'poi': poi, 'keywords': keywords}, config)
+    result, nodes_result = dag.run_with_param(input_params, config)
     # 检查是否如期运行
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
