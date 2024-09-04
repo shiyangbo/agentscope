@@ -462,43 +462,41 @@ def workflow_copy() -> Response:
     """
     data = request.json
     workflow_id = data.get("workflowID")
-
     if not workflow_id:
         return jsonify({"code": 400, "message": "workflowID and userID is required"})
     # 查找
     workflow_config = _WorkflowTable.query.filter_by(id=workflow_id).first()
-    if not workflow_config:
-        return jsonify({"code": 400, "message": "workflow_config not exists"})
-    config_name = json.loads(workflow_config.config_name)
-    config_en_name = json.loads(workflow_config.config_en_name)
-    # 查询config_name和config_en_name,如果存在config_name_n,那么将config_name_copy和config_en_name_copy命名为_(n+1)
-    existing_config_copies = _WorkflowTable.query.filter(
-            _WorkflowTable.config_name.like(f"{config_name}%"),
-            ).all()
-    # 计算新的名称后缀
-    name_suffix = 1
-    for config_copy in existing_config_copies:
-        if config_copy.config_name == f"{config_name}_{name_suffix}" or config_copy.config_en_name == f"{config_en_name}_{name_suffix}":
-            name_suffix += 1
-    new_config_name = f"{config_name}_{name_suffix}"
-    new_config_en_name = f"{config_en_name}_{name_suffix}"
-
-    try:
-        # 如果插件处于已发布状态，复制后变回draft
-        new_status = 'draft' if workflow_config.status == 'published' else workflow_config.status
-        new_workflow_id = uuid.uuid4()
-        new_workflow = _WorkflowTable(
-            id=str(new_workflow_id),
-            user_id=workflow_config.user_id,
-            config_name=new_config_name,
-            config_en_name=new_config_en_name,
-            config_desc=workflow_config.config_desc,
-            dag_content=workflow_config.dag_content,
-            status=new_status
-        )
-        db.session.add(new_workflow)
-        db.session.commit()
-
+    if workflow_config:
+        try:
+            config_name = json.loads(workflow_config.config_name)
+            config_en_name = json.loads(workflow_config.config_en_name)
+            # 查询config_name和config_en_name,如果存在config_name_n,那么将config_name_copy和config_en_name_copy命名为_(n+1)
+            existing_config_copies = _WorkflowTable.query.filter(
+                    _WorkflowTable.config_name.like(f"{config_name}%"),
+                    ).all()
+            # 计算新的名称后缀
+            name_suffix = 1
+            for config_copy in existing_config_copies:
+                if config_copy.config_name == f"{config_name}_{name_suffix}" or config_copy.config_en_name == f"{config_en_name}_{name_suffix}":
+                    name_suffix += 1
+            new_config_name = f"{config_name}_{name_suffix}"
+            new_config_en_name = f"{config_en_name}_{name_suffix}"
+            new_status = 'draft' if workflow_config.status == 'published' else workflow_config.status
+            new_workflow_id = uuid.uuid4()
+            new_workflow = _WorkflowTable(
+                id=str(new_workflow_id),
+                user_id=workflow_config.user_id,
+                config_name=new_config_name,
+                config_en_name=new_config_en_name,
+                config_desc=workflow_config.config_desc,
+                dag_content=workflow_config.dag_content,
+                status=new_status
+            )
+            db.session.add(new_workflow)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"code": 500, "message": str(e)})
         response_data = {
             "code": 0,
             "message": "",
@@ -511,10 +509,10 @@ def workflow_copy() -> Response:
                 "workflowSchema": json.loads(new_workflow.dag_content)
             }
         }
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 500, "message": str(e)})
-    return jsonify(response_data)
+        return jsonify(response_data)
+    else:
+        return jsonify({"code": 500, "message": "Internal Server Error"})
+
 
 
 @app.route("/workflow/get", methods=["GET"])
