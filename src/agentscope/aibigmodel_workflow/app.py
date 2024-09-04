@@ -455,7 +455,7 @@ def workflow_save() -> Response:
         return jsonify({"code": 500, "message": "Internal Server Error"})
 
 
-@app.route("/workflow/copy", methods=["POST"])
+@app.route("/workflow/clone", methods=["POST"])
 def workflow_copy() -> Response:
     """
     Copy the workflow JSON data as a new one.
