@@ -243,7 +243,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         return jsonify({"code": 400, "message": "plugin_en_name empty"})
 
     # 大模型的入参适配
-    input_params = request.json()
+    input_params = request.json
     if not isinstance(input_params, dict):
         return jsonify({"code": 400, "message": f"input param type is {type(input_params)}, not dict"})
 
