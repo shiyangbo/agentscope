@@ -240,14 +240,14 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     Input query data and get response.
     """
     if plugin_en_name == "":
-        return jsonify({"code": 400, "message": "plugin_en_name empty", "data": None})
+        return jsonify({"code": 400, "message": "plugin_en_name empty"})
 
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     poi = request.json.get("poi")
     keywords = request.json.get("keywords")
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
-        return jsonify({"code": 400, "message": "plugin not exists", "data": None})
+        return jsonify({"code": 400, "message": "plugin not exists"})
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
@@ -255,7 +255,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         converted_config = workflow_format_convert(config)
         dag = build_dag(converted_config)
     except Exception as e:
-        return jsonify({"code": 400, "message": repr(e), "data": None})
+        return jsonify({"code": 400, "message": repr(e)})
 
     # 调用运行dag
     start_time = time.time()
@@ -264,7 +264,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
         if 'failed' in node_status:
-            return jsonify({"code": 400, "message": node_status, "data": None})
+            return jsonify({"code": 400, "message": node_status})
 
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
@@ -272,23 +272,11 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
     execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
-        return jsonify({"code": 400, "message": "execute result not exists", "data": None})
+        return jsonify({"code": 400, "message": "execute result not exists"})
 
+    # 大模型调用时，不需要增加数据库流水记录
     execute_result = json.dumps(execute_result)
-    # 数据库存储
-    try:
-        db.session.add(
-            _ExecuteTable(
-                execute_id=dag.uuid,
-                execute_result=execute_result,
-            ),
-        )
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 400, "message": str(e), "data": None})
-
-    logger.info(f"execute_result: {execute_result}")
+    logger.info(f"{plugin_en_name=}, execute_result: {execute_result}")
     return result
 
 @app.route("/node/run", methods=["POST"])
