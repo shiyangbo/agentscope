@@ -463,7 +463,7 @@ def workflow_copy() -> Response:
     data = request.json
     workflow_id = data.get("workflowID")
 
-    if not workflow_id :
+    if not workflow_id:
         return jsonify({"code": 400, "message": "workflowID and userID is required"})
     # 查找
     workflow_config = _WorkflowTable.query.filter_by(id=workflow_id).first()
@@ -503,7 +503,7 @@ def workflow_copy() -> Response:
             "code": 0,
             "message": "",
             "result": {
-                "workflowID": new_workflow.id,
+                "id": new_workflow.id,
                 "configName": new_workflow.config_name,
                 "configENName": new_workflow.config_en_name,
                 "configDesc": new_workflow.config_desc,
