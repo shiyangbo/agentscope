@@ -42,6 +42,7 @@ test_without_mysql = False
 if test_without_mysql:
     # Set the cache directory
     from pathlib import Path
+
     _cache_dir = Path.home() / ".cache" / "agentscope-studio"
     _cache_db = _cache_dir / "agentscope.db"
     os.makedirs(str(_cache_dir), exist_ok=True)
@@ -89,6 +90,7 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     __tablename__ = "llm_execute_info"
     execute_id = db.Column(db.String(100), primary_key=True)  # 运行ID
     execute_result = db.Column(db.Text)
+    user_id = db.Column(db.String(100))  # 用户ID
 
 
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
@@ -101,6 +103,16 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     config_desc = db.Column(db.Text)
     dag_content = db.Column(db.Text)
     status = db.Column(db.String(10))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'config_name': self.config_name,
+            'config_en_name': self.config_en_name,
+            'config_desc': self.config_desc,
+            'status': self.status
+        }
 
 
 class _PluginTable(db.Model):  # type: ignore[name-defined]
@@ -228,14 +240,14 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     Input query data and get response.
     """
     if plugin_en_name == "":
-        return jsonify({"code": 400, "message": "plugin_en_name empty", "data": None})
+        return jsonify({"code": 400, "message": "plugin_en_name empty"})
 
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     poi = request.json.get("poi")
     keywords = request.json.get("keywords")
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
-        return jsonify({"code": 400, "message": "plugin not exists", "data": None})
+        return jsonify({"code": 400, "message": "plugin not exists"})
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
@@ -243,7 +255,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         converted_config = workflow_format_convert(config)
         dag = build_dag(converted_config)
     except Exception as e:
-        return jsonify({"code": 400, "message": repr(e), "data": None})
+        return jsonify({"code": 400, "message": repr(e)})
 
     # 调用运行dag
     start_time = time.time()
@@ -252,7 +264,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
         if 'failed' in node_status:
-            return jsonify({"code": 400, "message": node_status, "data": None})
+            return jsonify({"code": 400, "message": node_status})
 
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
@@ -260,23 +272,11 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
     execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
-        return jsonify({"code": 400, "message": "execute result not exists", "data": None})
+        return jsonify({"code": 400, "message": "execute result not exists"})
 
+    # 大模型调用时，不需要增加数据库流水记录
     execute_result = json.dumps(execute_result)
-    # 数据库存储
-    try:
-        db.session.add(
-            _ExecuteTable(
-                execute_id=dag.uuid,
-                execute_result=execute_result,
-            ),
-        )
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 400, "message": str(e), "data": None})
-
-    logger.info(f"execute_result: {execute_result}")
+    logger.info(f"{plugin_en_name=}, execute_result: {execute_result}")
     return result
 
 @app.route("/node/run", methods=["POST"])
@@ -319,6 +319,7 @@ def workflow_run() -> Response:
     # 用户输入的data信息，包含start节点所含信息，config文件存储地址
     content = request.json.get("data")
     workflow_schema = request.json.get("workflowSchema")
+    user_id = request.headers.get("X-User-Id")
     logger.info(f"workflow_schema: {workflow_schema}")
 
     try:
@@ -347,6 +348,7 @@ def workflow_run() -> Response:
             _ExecuteTable(
                 execute_id=dag.uuid,
                 execute_result=execute_result,
+                user_id=user_id
             ),
         )
         db.session.commit()
@@ -389,7 +391,7 @@ def workflow_create() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             raise e
-        return jsonify({"code": 0, "workflowID": str(workflow_id), "message": "Workflow file saved successfully"})
+        return jsonify({"code": 0, "workflowID": str(workflow_id), "message": "Workflow file created successfully"})
     else:
         return jsonify({"code": 400, "message": "该英文名称已存在, 请重新填写"})
 
@@ -539,14 +541,15 @@ def workflow_get() -> tuple[Response, int] | Response:
         },
     )
 
+
 @app.route("/workflow/status", methods=["GET"])
 def workflow_get_process() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow process results from the specified JSON file.
     """
     execute_id = request.args.get("executeID")
-
-    workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id).first()
+    user_id = request.headers.get('X-User-Id')
+    workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id,user_id=user_id).first()
     if not workflow_result:
         return jsonify({"code": 400, "message": "workflow_result not exists"})
 
@@ -558,6 +561,38 @@ def workflow_get_process() -> tuple[Response, int] | Response:
             "message": ""
         },
     )
+
+
+@app.route("/workflow/list", methods=["GET"])
+def workflow_get_list() -> tuple[Response, int] | Response:
+    """
+    Reads and returns workflow data from the specified JSON file.
+    """
+    user_id = request.headers.get('X-User-Id')
+    page = request.args.get('page', default=1)
+    limit = request.args.get('limit', default=10)
+    keyword = request.args.get('keyword', default='')
+    status = request.args.get('status', default='')
+    if not user_id:
+        return jsonify({"code": 400, "message": "workflowID is required"})
+
+    try:
+        query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
+        if keyword:
+            query = query.filter(_WorkflowTable.config_name.contains(keyword) |
+                                 _WorkflowTable.config_en_name.contains(keyword))
+        if status:
+            query = query.filter_by(status=status)
+
+        # 分页查询
+        workflows = query.paginate(page=int(page), per_page=int(limit))
+
+        workflows_list = [workflow.to_dict() for workflow in workflows]
+
+        return jsonify({"code": 0, "result": workflows_list})
+    except SQLAlchemyError as e:
+        app.logger.error(f"Error occurred while fetching workflow list: {e}")
+        return jsonify({"code": 500, "message": "Error occurred while fetching workflow list."})
 
 
 def workflow_format_convert(origin_dict: dict) -> dict:

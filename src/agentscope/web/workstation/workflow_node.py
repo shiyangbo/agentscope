@@ -1791,7 +1791,8 @@ class ApiNode(WorkflowNode):
         # 检查返回值是否对应
         for k in self.output_params_spec:
             if k not in self.output_params:
-                raise Exception(f"user defined output parameter '{k}' not found in api response")
+                logger.error(f"api response: {self.output_params}")
+                raise Exception(f"user defined output parameter {k} not found in api response")
 
         params_pool[self.node_id] |= self.output_params
         logger.info(
