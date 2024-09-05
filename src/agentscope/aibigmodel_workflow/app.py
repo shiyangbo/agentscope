@@ -488,11 +488,7 @@ def workflow_copy() -> Response:
                 "configName": new_workflow.config_name,
                 "configENName": new_workflow.config_en_name,
                 "configDesc": new_workflow.config_desc,
-<<<<<<< HEAD
                 "status": new_workflow.status
-=======
-                "status": new_workflow.status,
->>>>>>> 81aa933a8be2d42dd9998d9d80b85777d7139e13
             }
         }
         return jsonify(response_data)
