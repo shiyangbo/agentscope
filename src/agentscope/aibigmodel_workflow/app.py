@@ -137,8 +137,8 @@ def plugin_publish() -> Response:
         "pluginName": workflow_result.config_name,
         "pluginDesc": workflow_result.config_desc,
         "pluginENName": workflow_result.config_en_name,
-        "pluginField": summary,
-        "pluginQuestionExample": description
+        "pluginSummary": summary,
+        "pluginDescription": description
     }
     plugin_desc_config = plugin_desc_config_generator(data)
     plugin_desc_config_json_str = json.dumps(plugin_desc_config)
@@ -221,7 +221,6 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         return jsonify({"code": 400, "message": "execute result not exists"})
 
     # 大模型调用时，不需要增加数据库流水记录
-    execute_result = json.dumps(execute_result)
     logger.info(f"{plugin_en_name=}, execute_result: {execute_result}")
     return result
 
