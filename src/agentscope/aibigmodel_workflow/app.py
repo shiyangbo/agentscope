@@ -472,7 +472,7 @@ def workflow_copy() -> Response:
             config_name=new_config_name,
             config_en_name=new_config_en_name,
             config_desc=workflow_config.config_desc,
-            dag_content=json.dumps(workflow_config.dag_content),
+            dag_content=workflow_config.dag_content,
             status=new_status,
             updated_time=datetime.now()
         )
@@ -488,8 +488,7 @@ def workflow_copy() -> Response:
                 "configName": new_workflow.config_name,
                 "configENName": new_workflow.config_en_name,
                 "configDesc": new_workflow.config_desc,
-                "status": new_workflow.status,
-                "workflowSchema": new_workflow.dag_content
+                "status": new_workflow.status
             }
         }
         return jsonify(response_data)
