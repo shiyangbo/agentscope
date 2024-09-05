@@ -9,6 +9,7 @@ import tempfile
 import threading
 import traceback
 import sys
+from datetime import datetime
 
 sys.path.append('/agentscope/agentscope/src')
 
@@ -103,6 +104,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     config_desc = db.Column(db.Text)
     dag_content = db.Column(db.Text)
     status = db.Column(db.String(10))
+    updated_time = db.Column(db.DateTime)
 
     def to_dict(self):
         return {
@@ -126,6 +128,7 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     dag_content = db.Column(db.Text)  # 插件dag配置文件
     plugin_field = db.Column(db.String(100))  # 插件领域
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
+    published_time = db.Column(db.DateTime) # 插件发布时间
 
 
 # 发布调试成功的workflow
@@ -171,7 +174,8 @@ def plugin_publish() -> Response:
                 plugin_desc=workflow_result.config_desc,
                 dag_content=workflow_result.dag_content,
                 plugin_field=data["pluginField"],
-                plugin_desc_config=plugin_desc_config_json_str
+                plugin_desc_config=plugin_desc_config_json_str,
+                published_time=datetime.now()
             ),
         )
         db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
@@ -341,7 +345,8 @@ def workflow_create() -> Response:
                     config_name=config_name,
                     config_en_name=config_en_name,
                     config_desc=config_desc,
-                    status="draft"
+                    status="draft",
+                    updated_time=datetime.now()
                 ),
             )
             db.session.commit()
@@ -364,6 +369,7 @@ def workflow_delete() -> Response:
     if workflow_results:
         try:
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).delete()
+            db.session.query(_PluginTable).filter_by(id=workflow_id, user_id=user_id).delete()
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -402,7 +408,8 @@ def workflow_save() -> Response:
                 {_WorkflowTable.config_name: config_name,
                  _WorkflowTable.config_en_name: config_en_name,
                  _WorkflowTable.config_desc: config_desc,
-                 _WorkflowTable.dag_content: workflow})
+                 _WorkflowTable.dag_content: workflow,
+                 _WorkflowTable.updated_time: datetime.now()})
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
