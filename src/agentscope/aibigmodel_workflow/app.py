@@ -36,6 +36,8 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 
+import agentscope.aibigmodel_workflow.utils as utils
+
 app = Flask(__name__)
 
 # 读取 YAML 文件
@@ -113,7 +115,8 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
             'config_name': self.config_name,
             'config_en_name': self.config_en_name,
             'config_desc': self.config_desc,
-            'status': self.status
+            'status': self.status,
+            'updated_time': self.updated_time
         }
 
 
@@ -128,7 +131,7 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     dag_content = db.Column(db.Text)  # 插件dag配置文件
     plugin_field = db.Column(db.String(100))  # 插件领域
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
-    published_time = db.Column(db.DateTime) # 插件发布时间
+    published_time = db.Column(db.DateTime)  # 插件发布时间
 
 
 # 发布调试成功的workflow
@@ -152,7 +155,7 @@ def plugin_publish() -> Response:
         "pluginField": summary,
         "pluginQuestionExample": description
     }
-    plugin_desc_config = plugin_desc_config_generator(data)
+    plugin_desc_config = utils.plugin_desc_config_generator(data)
     plugin_desc_config_json_str = json.dumps(plugin_desc_config)
 
     # 数据库存储
@@ -179,7 +182,7 @@ def plugin_publish() -> Response:
             ),
         )
         db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
-            {_WorkflowTable.status: "published"})
+            {_WorkflowTable.status: utils.WorkflowStatus.WORKFLOW_PUBLISHED})
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -210,7 +213,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
         config = json.loads(plugin.dag_content)
-        converted_config = workflow_format_convert(config)
+        converted_config = utils.workflow_format_convert(config)
         dag = build_dag(converted_config)
     except Exception as e:
         return jsonify({"code": 400, "message": repr(e)})
@@ -228,7 +231,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
-    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
         return jsonify({"code": 400, "message": "execute result not exists"})
 
@@ -236,6 +239,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     execute_result = json.dumps(execute_result)
     logger.info(f"{plugin_en_name=}, execute_result: {execute_result}")
     return result
+
 
 @app.route("/node/run", methods=["POST"])
 def node_run() -> Response:
@@ -253,7 +257,7 @@ def node_run() -> Response:
 
     try:
         # 使用node_id, 获取需要运行的node配置
-        node_config = node_format_convert(node)
+        node_config = utils.node_format_convert(node)
         dag = build_dag(node_config)
     except Exception as e:
         return jsonify({"code": 400, "message": repr(e)})
@@ -285,7 +289,7 @@ def workflow_run() -> Response:
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-        converted_config = workflow_format_convert(workflow_schema)
+        converted_config = utils.workflow_format_convert(workflow_schema)
         logger.info(f"config: {converted_config}")
         dag = build_dag(converted_config)
     except Exception as e:
@@ -297,7 +301,7 @@ def workflow_run() -> Response:
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
-    execute_result = get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
+    execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     # 需要持久化
     logger.info(f"execute_result: {execute_result}")
     execute_result = json.dumps(execute_result)
@@ -345,7 +349,7 @@ def workflow_create() -> Response:
                     config_name=config_name,
                     config_en_name=config_en_name,
                     config_desc=config_desc,
-                    status="draft",
+                    status=utils.WorkflowStatus.WORKFLOW_DRAFT,
                     updated_time=datetime.now()
                 ),
             )
@@ -450,7 +454,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
     """
     execute_id = request.args.get("executeID")
     user_id = request.headers.get('X-User-Id')
-    workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id,user_id=user_id).first()
+    workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id, user_id=user_id).first()
     if not workflow_result:
         return jsonify({"code": 400, "message": "workflow_result not exists"})
 
@@ -494,132 +498,6 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     except SQLAlchemyError as e:
         app.logger.error(f"Error occurred while fetching workflow list: {e}")
         return jsonify({"code": 500, "message": "Error occurred while fetching workflow list."})
-
-
-def workflow_format_convert(origin_dict: dict) -> dict:
-    converted_dict = {}
-    nodes = origin_dict.get("nodes", [])
-    edges = origin_dict.get("edges", [])
-
-    for node in nodes:
-        node_id = node["id"]
-        node_data = {
-            "data": {
-                "args": node["data"]
-            },
-            "inputs": {
-                "input_1": {
-                    "connections": []
-                }
-            },
-            "outputs": {
-                "output_1": {
-                    "connections": []
-                }
-            },
-            "name": node["type"]
-        }
-        converted_dict.setdefault(node_id, node_data)
-
-        for edge in edges:
-            if edge["source_node_id"] == node_id:
-                converted_dict[node_id]["outputs"]["output_1"]["connections"].append(
-                    {'node': edge["target_node_id"], 'output': "input_1"}
-                )
-            elif edge["target_node_id"] == node_id:
-                converted_dict[node_id]["inputs"]["input_1"]["connections"].append(
-                    {'node': edge["source_node_id"], 'input': "output_1"}
-                )
-
-    return converted_dict
-
-
-def node_format_convert(node_dict: dict) -> dict:
-    converted_dict = {}
-    node_id = node_dict["id"]
-    node_data = {
-        "data": {
-            "args": node_dict["data"]
-        },
-        "inputs": {
-            "input_1": {
-                "connections": []
-            }
-        },
-        "outputs": {
-            "output_1": {
-                "connections": []
-            }
-        },
-        "name": node_dict["type"]
-    }
-    converted_dict.setdefault(node_id, node_data)
-    return converted_dict
-
-
-def get_workflow_running_result(nodes_result: list, execute_id: str, execute_status: str, execute_cost: str) -> dict:
-    execute_result = {
-        "execute_id": execute_id,
-        "execute_status": execute_status,
-        "execute_cost": execute_cost,
-        "node_result": nodes_result
-    }
-    return execute_result
-
-
-def standardize_single_node_format(data: dict) -> dict:
-    for value in data.values():
-        for field in ['inputs', 'outputs']:
-            # 如果字段是一个字典，且'connections'键存在于字典中
-            if 'input_1' in value[field]:
-                # 将'connections'字典设置为[]
-                value[field]['input_1']['connections'] = []
-            elif 'output_1' in value[field]:
-                value[field]['output_1']['connections'] = []
-    return data
-
-
-def plugin_desc_config_generator(data: dict) -> dict:
-    plugin_desc_config = {
-        "name_for_human": data["pluginName"],
-        "name_for_model": data["pluginENName"],
-        "desc_for_human": data["pluginDesc"],
-        "desc_for_model": data["pluginDesc"],
-        "field": data["pluginField"],
-        "question_example": data["pluginQuestionExample"],
-        "answer_example": data["pluginENName"],
-        "confirm_required": "false",
-        "api_info": {
-            "url": SERVICE_URL,  # 后续改为服务部署的url地址
-            "method": "post",
-            "content_type": "application/json",
-            "input_params": [
-                {
-                    "name": "pluginName",
-                    "description": "插件名称",
-                    "required": "true",
-                    "schema": {
-                        "type": "string",
-                        "default": "插件名称"
-                    },
-                    "para_example": "插件名称"
-                },
-                {
-                    "name": "data",
-                    "description": "问题",
-                    "required": "true",
-                    "schema": {
-                        "type": "string",
-                        "default": data["pluginQuestionExample"]
-                    },
-                    "para_example": data["pluginQuestionExample"]
-                }
-            ]
-        },
-        "version": "1.0",
-        "contact_email": "test@163.com"
-    }
-    return plugin_desc_config
 
 
 def init(
