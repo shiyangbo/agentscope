@@ -484,7 +484,7 @@ def workflow_copy() -> Response:
         new_config_name = f"{config_name}_{name_suffix}"
         new_config_en_name = f"{config_en_name}_{name_suffix}"
         new_status = utils.WorkflowStatus.WORKFLOW_DRAFT \
-            if workflow_config.status == utils.WorkflowStatus.WORKFLOW_PUBLISHED else workflow_config.status
+            if workflow_config.status == 'published' else workflow_config.status
 
         # 生成新的工作流 ID
         new_workflow_id = uuid.uuid4()
