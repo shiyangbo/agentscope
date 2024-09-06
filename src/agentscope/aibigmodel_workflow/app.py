@@ -2,6 +2,7 @@
 """The Web Server of the AgentScope Studio."""
 import json
 import os
+import re
 import time
 import sys
 sys.path.append('/agentscope/agentscope/src')
@@ -441,6 +442,87 @@ def workflow_save() -> Response:
         return jsonify({"code": 0, "workflowID": workflow_id, "message": "Workflow file saved successfully"})
     else:
         return jsonify({"code": 500, "message": "Internal Server Error"})
+
+
+@app.route("/workflow/clone", methods=["POST"])
+def workflow_copy() -> Response:
+    """
+    Copy the workflow JSON data as a new one.
+    """
+    data = request.json
+    workflow_id = data.get("workflowID")
+    user_id = request.headers.get("X-User-Id")
+
+    if not workflow_id:
+        return jsonify({"code": 400, "message": "workflowID is required"})
+
+    if not user_id:
+        return jsonify({"code": 400, "message": "userID is required"})
+
+    # 查找工作流配置
+    workflow_config = _WorkflowTable.query.filter_by(id=workflow_id, user_id=user_id).first()
+    if not workflow_config:
+        return jsonify({"code": 400, "message": "workflow_config does not exist"})
+
+    try:
+        config_name = workflow_config.config_name
+        config_en_name = workflow_config.config_en_name
+
+        # 查询相同名称的工作流配置，并为新副本生成唯一的名称
+        existing_config_copies = _WorkflowTable.query.filter(
+            _WorkflowTable.config_name.like(f"{config_name}%"),
+            _WorkflowTable.user_id == user_id
+        ).all()
+
+        # 计算新的名称后缀，找出最大后缀
+        existing_suffixes = []
+        for config_copy in existing_config_copies:
+            match = re.match(rf"{re.escape(config_name)}_(\d+)",  config_copy.config_name)
+            if match:
+                existing_suffixes.append(int(match.group(1)))
+        # 找出最大后缀
+        name_suffix = max(existing_suffixes, default=0) + 1
+
+        # 生成新的配置名称和状态
+        new_config_name = f"{config_name}_{name_suffix}"
+        new_config_en_name = f"{config_en_name}_{name_suffix}"
+        new_status = utils.WorkflowStatus.WORKFLOW_DRAFT \
+            if workflow_config.status == 'published' else workflow_config.status
+
+        # 生成新的工作流 ID
+        new_workflow_id = uuid.uuid4()
+
+        # 创建新工作流记录
+        new_workflow = _WorkflowTable(
+            id=str(new_workflow_id),
+            user_id=workflow_config.user_id,
+            config_name=new_config_name,
+            config_en_name=new_config_en_name,
+            config_desc=workflow_config.config_desc,
+            dag_content=workflow_config.dag_content,
+            status=new_status,
+            updated_time=datetime.now()
+        )
+        db.session.add(new_workflow)
+        db.session.commit()
+
+        # 返回新创建的工作流信息
+        response_data = {
+            "code": 0,
+            "message": "",
+            "result": {
+                "id": new_workflow.id,
+                "configName": new_workflow.config_name,
+                "configENName": new_workflow.config_en_name,
+                "configDesc": new_workflow.config_desc,
+                "status": new_workflow.status
+            }
+        }
+        return jsonify(response_data)
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"code": 500, "message": str(e)})
 
 
 @app.route("/workflow/get", methods=["GET"])
