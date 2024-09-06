@@ -99,9 +99,9 @@ def plugin_desc_config_generator(data: dict) -> dict:
     dag_spec_dict = data['pluginSpec']
 
     openapi_schema_dict = {"openapi": "3.0.0", "info": {
-        "title": "MAP API",
+        "title": f"{dag_en_name} API",
         "version": "1.0.0",
-        "description": "获取 POI 的相关信息"
+        "description": f"{dag_desc}"
     }, "servers": [
         {
             "url": "http://106.74.31.170:5003/plugin/api"
@@ -109,9 +109,9 @@ def plugin_desc_config_generator(data: dict) -> dict:
     ], "paths": {
         f"/run_for_bigmodel/{dag_en_name}": {
             "post": {
-                "summary": f"{dag_name}, {dag_en_name}, {dag_desc}",
+                "summary": f"{dag_name}, {dag_en_name}",
                 "operationId": f"action_{dag_en_name}",
-                "description": f"{dag_name}, {dag_en_name}, {dag_desc}, {dag_desc_example}",
+                "description": f"{dag_desc}, {dag_desc_example}",
                 "parameters": [
                     {
                         "in": "header",
