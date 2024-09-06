@@ -128,7 +128,7 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 @app.route("/plugin/api/publish", methods=["POST"])
 def plugin_publish() -> Response:
     workflow_id = request.json.get("workflowID")
-    summary = request.json.get("pluginField")
+    pluginField = request.json.get("pluginField")
     description = request.json.get("pluginQuestionExample")
     user_id = request.headers.get("X-User-Id")
     # 查询workflow_info表获取插件信息
@@ -144,7 +144,7 @@ def plugin_publish() -> Response:
         "pluginName": workflow_result.config_name,
         "pluginDesc": workflow_result.config_desc,
         "pluginENName": workflow_result.config_en_name,
-        "pluginSummary": summary,
+        "pluginField": pluginField,
         "pluginDescription": description,
         "pluginSpec": dag_content
     }
