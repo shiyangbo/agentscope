@@ -187,9 +187,9 @@ def plugin_publish() -> Response:
     return jsonify({"code": 0, "message": "Workflow file published successfully"})
 
 
-@app.route("/workflow/user_defined_schema", methods=["GET"])
-def plugin_openapi_schema() -> Response:
-    workflow_id = request.json.get("workflowID")
+@app.route("/workflow/openapi_schema", methods=["GET"])
+def plugin_openapi_schema() -> tuple[Response, int] | Response:
+    workflow_id = request.args.get("workflowID")
     user_id = request.headers.get("X-User-Id")
 
     if workflow_id == "":
