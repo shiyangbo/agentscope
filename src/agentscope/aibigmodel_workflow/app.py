@@ -243,8 +243,9 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     # 检查是否如期运行
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
-        if 'failed' in node_status:
-            return jsonify({"code": 400, "message": node_status})
+        if node_status == 'failed':
+            node_message = node_dict['node_message']
+            return jsonify({"code": 400, "message": node_message})
 
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
