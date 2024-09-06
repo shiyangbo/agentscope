@@ -223,6 +223,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     input_params = request.json
     if not isinstance(input_params, dict):
         return jsonify({"code": 400, "message": f"input param type is {type(input_params)}, not dict"})
+    logger.info(f"=== AI request: {input_params=}")
 
     plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
     if not plugin:
@@ -254,7 +255,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         return jsonify({"code": 400, "message": "execute result not exists"})
 
     # 大模型调用时，不需要增加数据库流水记录
-    logger.info(f"{plugin_en_name=}, execute_result: {execute_result}")
+    logger.info(f"=== AI request: {plugin_en_name=}, execute_result: {execute_result}")
     return result
 
 
