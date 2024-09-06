@@ -206,7 +206,7 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
     openapi_schema_json_str = plugin.plugin_desc_config
     openapi_schema_bytes = openapi_schema_json_str.encode('utf-8')
     openapi_schema_base64 = base64.b64encode(openapi_schema_bytes)
-    return jsonify({"code": 0, "base64OpenAPISchema": openapi_schema_base64})
+    return jsonify({"code": 0, "base64OpenAPISchema": str(openapi_schema_base64)})
 
 
 # 已经发布的workflow直接运行
