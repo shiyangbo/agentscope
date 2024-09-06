@@ -2,23 +2,16 @@
 """The Web Server of the AgentScope Studio."""
 import json
 import os
-import re
-import subprocess
 import time
-import tempfile
-import threading
-import traceback
 import sys
-from datetime import datetime
-
 sys.path.append('/agentscope/agentscope/src')
+import uuid
+import yaml
+import base64
 
+from datetime import datetime
 from typing import Tuple, Union, Optional
-
 from sqlalchemy.exc import SQLAlchemyError
-
-from agentscope.web.workstation.workflow_dag import build_dag
-from agentscope._runtime import _runtime
 from flask import (
     Flask,
     request,
@@ -26,17 +19,14 @@ from flask import (
     Response,
     abort,
 )
-from loguru import logger
-import sqlite3
-import uuid
-import yaml
-
 from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
+from loguru import logger
 
 import agentscope.aibigmodel_workflow.utils as utils
+from agentscope.web.workstation.workflow_dag import build_dag
 
 app = Flask(__name__)
 
@@ -147,16 +137,17 @@ def plugin_publish() -> Response:
     ).first()
     if not workflow_result:
         return jsonify({"code": 400, "message": "No workflow config data exists"})
+
     # 插件描述信息生成，对接智能体格式
+    dag_content = json.loads(workflow_result.dag_content)
     data = {
         "pluginName": workflow_result.config_name,
         "pluginDesc": workflow_result.config_desc,
         "pluginENName": workflow_result.config_en_name,
         "pluginSummary": summary,
-        "pluginDescription": description
+        "pluginDescription": description,
+        "pluginSpec": dag_content
     }
-    plugin_desc_config = utils.plugin_desc_config_generator(data)
-    plugin_desc_config_json_str = json.dumps(plugin_desc_config)
 
     # 数据库存储
     plugin = _PluginTable.query.filter(
@@ -168,6 +159,9 @@ def plugin_publish() -> Response:
         return jsonify({"code": 400, "message": f"Multiple records found for plugin en name: {data['pluginENName']}"})
 
     try:
+        openapi_schema = utils.plugin_desc_config_generator(data)
+        openapi_schema_json_str = json.dumps(openapi_schema)
+
         db.session.add(
             _PluginTable(
                 id=workflow_id,
@@ -177,7 +171,7 @@ def plugin_publish() -> Response:
                 plugin_desc=workflow_result.config_desc,
                 dag_content=workflow_result.dag_content,
                 plugin_field=data["pluginField"],
-                plugin_desc_config=plugin_desc_config_json_str,
+                plugin_desc_config=openapi_schema_json_str,
                 published_time=datetime.now()
             ),
         )
@@ -186,10 +180,33 @@ def plugin_publish() -> Response:
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        raise
-    # 调用agent智能体接口，将插件进行注册
+        return jsonify({"code": 400, "message": str(e)})
+    except Exception as e:
+        return jsonify({"code": 400, "message": str(e)})
 
     return jsonify({"code": 0, "message": "Workflow file published successfully"})
+
+
+@app.route("/workflow/openapi_schema", methods=["GET"])
+def plugin_openapi_schema() -> Response:
+    workflow_id = request.json.get("workflowID")
+    user_id = request.headers.get("X-User-Id")
+
+    if workflow_id == "":
+        return jsonify({"code": 400, "message": "workflow id not found"})
+    if user_id == "":
+        return jsonify({"code": 400, "message": "user id not found"})
+
+    plugin = _PluginTable.query.filter(
+        _PluginTable.id == workflow_id,
+    ).first()
+    if not plugin:
+        return jsonify({"code": 400, "message": f"plugin: {workflow_id} not found"})
+
+    openapi_schema_json_str = plugin.plugin_desc_config
+    openapi_schema_bytes = openapi_schema_json_str.encode('utf-8')
+    openapi_schema_base64 = base64.b64encode(openapi_schema_bytes)
+    return jsonify({"code": 0, "base64OpenAPISchema": openapi_schema_base64})
 
 
 # 已经发布的workflow直接运行
@@ -318,7 +335,7 @@ def workflow_run() -> Response:
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        raise e
+        return jsonify({"code": 400, "message": str(e)})
 
     return jsonify(code=0, result=result, executeID=dag.uuid)
 
@@ -355,7 +372,8 @@ def workflow_create() -> Response:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            raise e
+            return jsonify({"code": 400, "message": str(e)})
+
         return jsonify({"code": 0, "workflowID": str(workflow_id), "message": "Workflow file created successfully"})
     else:
         return jsonify({"code": 400, "message": "该英文名称已存在, 请重新填写"})

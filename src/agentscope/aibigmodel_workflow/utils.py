@@ -90,43 +90,98 @@ def standardize_single_node_format(data: dict) -> dict:
 
 
 def plugin_desc_config_generator(data: dict) -> dict:
-    plugin_desc_config = {
-        "name_for_human": data["pluginName"],
-        "name_for_model": data["pluginENName"],
-        "desc_for_human": data["pluginDesc"],
-        "desc_for_model": data["pluginDesc"],
-        "field": data["pluginField"],
-        "question_example": data["pluginQuestionExample"],
-        "answer_example": data["pluginENName"],
-        "confirm_required": "false",
-        "api_info": {
-            "url": SERVICE_URL,  # 后续改为服务部署的url地址
-            "method": "post",
-            "content_type": "application/json",
-            "input_params": [
-                {
-                    "name": "pluginName",
-                    "description": "插件名称",
-                    "required": "true",
-                    "schema": {
-                        "type": "string",
-                        "default": "插件名称"
+    dag_name = data['pluginName']
+    dag_en_name = data['pluginENName']
+    if dag_en_name == '':
+        raise Exception("plugin english name not found")
+    dag_desc = data['pluginDesc']
+    dag_desc_example = data['pluginDescription']
+    dag_spec_dict = data['pluginSpec']
+
+    openapi_schema_dict = {"openapi": "3.0.0", "info": {
+        "title": "MAP API",
+        "version": "1.0.0",
+        "description": "获取 POI 的相关信息"
+    }, "servers": [
+        {
+            "url": "http://106.74.31.170:5003/plugin/api"
+        }
+    ], "paths": {
+        f"/run_for_bigmodel/{dag_en_name}": {
+            "post": {
+                "summary": f"{dag_name}, {dag_en_name}, {dag_desc}",
+                "operationId": f"action_{dag_en_name}",
+                "description": f"{dag_name}, {dag_en_name}, {dag_desc}, {dag_desc_example}",
+                "parameters": [
+                    {
+                        "in": "header",
+                        "name": "content-type",
+                        "schema": {
+                            "type": "string",
+                            "example": "application/json"
+                        },
+                        "required": True
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功获取查询结果",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
                     },
-                    "para_example": "插件名称"
+                    "default": {
+                        "description": "请求失败时的错误信息",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
                 },
-                {
-                    "name": "data",
-                    "description": "问题",
-                    "required": "true",
-                    "schema": {
-                        "type": "string",
-                        "default": data["pluginQuestionExample"]
-                    },
-                    "para_example": data["pluginQuestionExample"]
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [],
+                                "properties": {}
+                            }
+                        }
+                    }
                 }
-            ]
-        },
-        "version": "1.0",
-        "contact_email": "test@163.com"
-    }
-    return plugin_desc_config
+            }
+        }
+    }}
+
+    # 完善入参列表
+    request_schema = openapi_schema_dict["paths"][f"/run_for_bigmodel/{dag_en_name}"]["post"]["requestBody"][
+        "content"]["application/json"]["schema"]
+
+    start_node_dict = {}
+    for node in dag_spec_dict['nodes']:
+        if node["type"] == "StartNode":
+            start_node_dict = node
+            break
+    if len(start_node_dict) == 0:
+        raise Exception("start node not found")
+
+    for param in start_node_dict['data']['outputs']:
+        param_name = param['name']
+        param_type = param['type']
+        param_desc = param['desc']
+
+        # 简单起见，这里只考虑普通变量，不考虑嵌套类型变量，例如object和array
+        request_schema['required'].append(param_name)
+        request_schema['properties'][param_name] = {
+            "type": param_type,
+            "description": param_desc
+        }
+
+    return openapi_schema_dict
