@@ -5,6 +5,7 @@ import os
 import re
 import time
 import sys
+
 sys.path.append('/agentscope/agentscope/src')
 import uuid
 import yaml
@@ -95,7 +96,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     config_name = db.Column(db.String(100))
     config_en_name = db.Column(db.String(100), unique=True)
     config_desc = db.Column(db.Text)
-    dag_content = db.Column(db.Text)
+    dag_content = db.Column(db.Text, default='{}')
     status = db.Column(db.String(10))
     updated_time = db.Column(db.DateTime)
 
@@ -107,7 +108,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
             'config_en_name': self.config_en_name,
             'config_desc': self.config_desc,
             'status': self.status,
-            'updated_time': self.updated_time
+            'updated_time': self.updated_time.strftime('%Y-%m-%d %H:%M:%S')
         }
 
 
@@ -208,7 +209,7 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
     openapi_schema_bytes = openapi_schema_json_str.encode('utf-8')
     openapi_schema_base64 = base64.b64encode(openapi_schema_bytes)
     openapi_schema_base64_str = openapi_schema_base64.decode('utf-8')
-    return jsonify({"code": 0, "base64OpenAPISchema": openapi_schema_base64_str})
+    return jsonify({"code": 0, "data": {"base64OpenAPISchema": openapi_schema_base64_str}})
 
 
 # 已经发布的workflow直接运行
@@ -261,8 +262,8 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
     return result
 
 
-@app.route("/node/run", methods=["POST"])
-def node_run() -> Response:
+@app.route("/node/run_api", methods=["POST"])
+def node_run_api() -> Response:
     """
     Input query data and get response.
     """
@@ -289,7 +290,37 @@ def node_run() -> Response:
     if nodes_result[0]["node_status"] != 'success':
         return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
 
-    return jsonify(code=0, result=nodes_result[0]["outputs"])
+    return jsonify(code=0, data=nodes_result[0]["outputs"])
+
+
+@app.route("/node/run_python", methods=["POST"])
+def node_run_python() -> Response:
+    """
+    Input query data and get response.
+    """
+    # 用户输入的data信息，包含start节点所含信息，config文件存储地址
+    content = request.json.get("data")
+    if not isinstance(content, dict):
+        return jsonify({"code": 400, "message": f"input param type is {type(content)}, not dict"})
+
+    node_schema = request.json.get("nodeSchema")
+    logger.info(f"nodeSchema: {node_schema}")
+
+    try:
+        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
+        converted_config = utils.workflow_format_convert(node_schema)
+        logger.info(f"config: {converted_config}")
+        dag = build_dag(converted_config)
+    except Exception as e:
+        return jsonify({"code": 400, "message": repr(e)})
+
+    result, nodes_result = dag.run_with_param(content, node_schema)
+    if len(nodes_result) != 1:
+        return jsonify({"code": 400, "message": nodes_result})
+    if nodes_result[0]["node_status"] != 'success':
+        return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
+
+    return jsonify(code=0, data=result)
 
 
 # 画布中的workflow，调试运行
@@ -341,9 +372,10 @@ def workflow_run() -> Response:
         db.session.rollback()
         return jsonify({"code": 400, "message": str(e)})
 
-    return jsonify(code=0, result=result, executeID=dag.uuid)
+    return jsonify(code=0, data=result, executeID=dag.uuid)
 
 
+# 创建接口后续需要增加根据入参模板不同，自动创建模板json，存储到dag_content中
 @app.route("/workflow/create", methods=["POST"])
 def workflow_create() -> Response:
     # request 参数获取
@@ -377,15 +409,15 @@ def workflow_create() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"code": 400, "message": str(e)})
-
-        return jsonify({"code": 0, "workflowID": str(workflow_id), "message": "Workflow file created successfully"})
+        data = {"workflow_id": str(workflow_id)}
+        return jsonify({"code": 0, "data": data, "message": "Workflow file created successfully"})
     else:
         return jsonify({"code": 400, "message": "该英文名称已存在, 请重新填写"})
 
 
-@app.route("/workflow/delete", methods=["POST"])
+@app.route("/workflow/delete", methods=["DELETE"])
 def workflow_delete() -> Response:
-    workflow_id = request.args.get("workflowID")
+    workflow_id = request.json.get("workflowID")
     user_id = request.headers.get("X-User-Id")
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
@@ -439,7 +471,8 @@ def workflow_save() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"code": 500, "message": str(e)})
-        return jsonify({"code": 0, "workflowID": workflow_id, "message": "Workflow file saved successfully"})
+        data = {"workflow_id": str(workflow_id)}
+        return jsonify({"code": 0, "data": data, "message": "Workflow file saved successfully"})
     else:
         return jsonify({"code": 500, "message": "Internal Server Error"})
 
@@ -477,7 +510,7 @@ def workflow_copy() -> Response:
         # 计算新的名称后缀，找出最大后缀
         existing_suffixes = []
         for config_copy in existing_config_copies:
-            match = re.match(rf"{re.escape(config_name)}_(\d+)",  config_copy.config_name)
+            match = re.match(rf"{re.escape(config_name)}_(\d+)", config_copy.config_name)
             if match:
                 existing_suffixes.append(int(match.group(1)))
         # 找出最大后缀
@@ -505,18 +538,11 @@ def workflow_copy() -> Response:
         )
         db.session.add(new_workflow)
         db.session.commit()
-
         # 返回新创建的工作流信息
         response_data = {
             "code": 0,
             "message": "",
-            "result": {
-                "id": new_workflow.id,
-                "configName": new_workflow.config_name,
-                "configENName": new_workflow.config_en_name,
-                "configDesc": new_workflow.config_desc,
-                "status": new_workflow.status
-            }
+            "data": {"workflow_id": new_workflow.id}
         }
         return jsonify(response_data)
 
@@ -543,7 +569,7 @@ def workflow_get() -> tuple[Response, int] | Response:
     return jsonify(
         {
             "code": 0,
-            "result": dag_content,
+            "data": dag_content,
             "message": ""
         },
     )
@@ -564,7 +590,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
     return jsonify(
         {
             "code": 0,
-            "result": workflow_result.execute_result,
+            "data": {"result": workflow_result.execute_result},
             "message": ""
         },
     )
@@ -576,12 +602,12 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     Reads and returns workflow data from the specified JSON file.
     """
     user_id = request.headers.get('X-User-Id')
-    page = request.args.get('page', default=1)
-    limit = request.args.get('limit', default=10)
+    page = request.args.get('pageNo', default=1)
+    limit = request.args.get('pageSize', default=10)
     keyword = request.args.get('keyword', default='')
     status = request.args.get('status', default='')
     if not user_id:
-        return jsonify({"code": 400, "message": "workflowID is required"})
+        return jsonify({"code": 400, "message": "userID is required"})
 
     try:
         query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
@@ -592,11 +618,11 @@ def workflow_get_list() -> tuple[Response, int] | Response:
             query = query.filter_by(status=status)
 
         # 分页查询
-        workflows = query.paginate(page=int(page), per_page=int(limit))
+        workflows = query.order_by(_WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
 
         workflows_list = [workflow.to_dict() for workflow in workflows]
-
-        return jsonify({"code": 0, "result": workflows_list})
+        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": len(workflows_list)}
+        return jsonify({"code": 0, "data": data})
     except SQLAlchemyError as e:
         app.logger.error(f"Error occurred while fetching workflow list: {e}")
         return jsonify({"code": 500, "message": "Error occurred while fetching workflow list."})
