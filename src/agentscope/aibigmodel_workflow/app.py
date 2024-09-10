@@ -288,7 +288,7 @@ def node_run_api() -> Response:
     if len(nodes_result) != 1:
         return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
-        return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
+        return jsonify({"code": 400, "message": nodes_result[0]["node_message"]})
 
     return jsonify(code=0, data=nodes_result[0]["outputs"])
 
@@ -318,7 +318,7 @@ def node_run_python() -> Response:
     if len(nodes_result) != 1:
         return jsonify({"code": 400, "message": nodes_result})
     if nodes_result[0]["node_status"] != 'success':
-        return jsonify({"code": 400, "message": nodes_result[0]["node_status"]})
+        return jsonify({"code": 400, "message": nodes_result[0]["node_message"]})
 
     return jsonify(code=0, data=result)
 
