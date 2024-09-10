@@ -1531,9 +1531,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
 
         # 2. 运行python解释器代码
         # 单个节点调试场景，入参在kwargs
-        if len(kwargs) > 0 and len(self.input_params['params']) > 0:
-            raise Exception("single node debug mode, but real input param not empty list")
-        if len(kwargs) > 0:
+        if len(kwargs) > 0 and len(self.input_params['params']) < 1:
             self.input_params['params'] = kwargs
 
         response = execute_python_code(
