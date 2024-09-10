@@ -1530,8 +1530,10 @@ class PythonServiceUserTypingNode(WorkflowNode):
             self.input_params['params'] |= param_one_dict
 
         # 2. 运行python解释器代码
-        # 单个节点调试场景，入参在kwargs
-        if len(kwargs) > 0 and len(self.input_params['params']) < 1:
+        # 单个节点调试运行场景
+        if len(self.output_params_spec) == 0:
+            if len(kwargs) > 0 and len(self.input_params['params']) > 0:
+                raise Exception("single node debug run, but real input param not empty list")
             self.input_params['params'] = kwargs
 
         response = execute_python_code(
