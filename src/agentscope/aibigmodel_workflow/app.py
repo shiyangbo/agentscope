@@ -103,12 +103,12 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     def to_dict(self):
         return {
             'id': self.id,
-            'user_id': self.user_id,
-            'config_name': self.config_name,
-            'config_en_name': self.config_en_name,
-            'config_desc': self.config_desc,
+            'userID': self.user_id,
+            'configName': self.config_name,
+            'configENName': self.config_en_name,
+            'configDesc': self.config_desc,
             'status': self.status,
-            'updated_time': self.updated_time.strftime('%Y-%m-%d %H:%M:%S')
+            'updatedTime': self.updated_time.strftime('%Y-%m-%d %H:%M:%S')
         }
 
 
@@ -409,7 +409,12 @@ def workflow_create() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"code": 7, "msg": str(e)})
-        data = {"workflow_id": str(workflow_id)}
+        data = {
+                "workflowID": str(workflow_id),
+                "configName": config_name,
+                "configENName": config_en_name,
+                "configDesc": config_desc
+        }
         return jsonify({"code": 0, "data": data, "msg": "Workflow file created successfully"})
     else:
         return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
@@ -471,7 +476,7 @@ def workflow_save() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"code": 5000, "msg": str(e)})
-        data = {"workflow_id": str(workflow_id)}
+        data = {"workflowID": str(workflow_id)}
         return jsonify({"code": 0, "data": data, "msg": "Workflow file saved successfully"})
     else:
         return jsonify({"code": 5000, "msg": "Internal Server Error"})
@@ -550,10 +555,16 @@ def workflow_get() -> tuple[Response, int] | Response:
         return jsonify({"code": 7, "msg": "workflow_config not exists"})
 
     dag_content = json.loads(workflow_config.dag_content)
+    data = {
+            "configName": workflow_config.config_name,
+            "configENName": workflow_config.config_en_name,
+            "configDesc": workflow_config.config_desc,
+            "workflowSchema": dag_content
+    }
     return jsonify(
         {
             "code": 0,
-            "data": dag_content,
+            "data": data,
             "msg": ""
         },
     )
@@ -601,11 +612,14 @@ def workflow_get_list() -> tuple[Response, int] | Response:
         if status:
             query = query.filter_by(status=status)
 
+        # 获取符合user_id条件的所有记录数
+        total = query.count()
+
         # 分页查询
         workflows = query.order_by(_WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
 
         workflows_list = [workflow.to_dict() for workflow in workflows]
-        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": len(workflows_list)}
+        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": total}
         return jsonify({"code": 0, "data": data})
     except SQLAlchemyError as e:
         app.logger.error(f"Error occurred while fetching workflow list: {e}")
