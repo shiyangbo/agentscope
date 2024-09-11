@@ -483,7 +483,7 @@ def workflow_save() -> Response:
 
 
 @app.route("/workflow/clone", methods=["POST"])
-def workflow_copy() -> Response:
+def workflow_clone() -> Response:
     """
     Copy the workflow JSON data as a new one.
     """
@@ -502,34 +502,14 @@ def workflow_copy() -> Response:
     if not workflow_config:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
 
+    new_config_name = f"{workflow_config.config_name}_副本"
+    new_config_en_name = f"{workflow_config.config_en_name}_copy"
+    existing_copy = _WorkflowTable.query.filter(_WorkflowTable.config_en_name == new_config_en_name).first()
+    if existing_copy:
+        return jsonify({"code": 7, "message": f"'{new_config_en_name}' already exists"})
     try:
-        config_name = workflow_config.config_name
-        config_en_name = workflow_config.config_en_name
-
-        # 查询相同名称的工作流配置，并为新副本生成唯一的名称
-        existing_config_copies = _WorkflowTable.query.filter(
-            _WorkflowTable.config_name.like(f"{config_name}%"),
-            _WorkflowTable.user_id == user_id
-        ).all()
-
-        # 计算新的名称后缀，找出最大后缀
-        existing_suffixes = []
-        for config_copy in existing_config_copies:
-            match = re.match(rf"{re.escape(config_name)}_(\d+)", config_copy.config_name)
-            if match:
-                existing_suffixes.append(int(match.group(1)))
-        # 找出最大后缀
-        name_suffix = max(existing_suffixes, default=0) + 1
-
-        # 生成新的配置名称和状态
-        new_config_name = f"{config_name}_{name_suffix}"
-        new_config_en_name = f"{config_en_name}_{name_suffix}"
-        new_status = utils.WorkflowStatus.WORKFLOW_DRAFT \
-            if workflow_config.status == 'published' else workflow_config.status
-
         # 生成新的工作流 ID
         new_workflow_id = uuid.uuid4()
-
         # 创建新工作流记录
         new_workflow = _WorkflowTable(
             id=str(new_workflow_id),
@@ -538,22 +518,26 @@ def workflow_copy() -> Response:
             config_en_name=new_config_en_name,
             config_desc=workflow_config.config_desc,
             dag_content=workflow_config.dag_content,
-            status=new_status,
+            status=utils.WorkflowStatus.WORKFLOW_DRAFT,
             updated_time=datetime.now()
         )
         db.session.add(new_workflow)
         db.session.commit()
+
         # 返回新创建的工作流信息
         response_data = {
             "code": 0,
-            "msg": "",
-            "data": {"workflowID": new_workflow.id}
+            "data": {"workflow_id": new_workflow.id},
+            "msg": "Workflow cloned successfully"
         }
         return jsonify(response_data)
 
     except SQLAlchemyError as e:
         db.session.rollback()
-        return jsonify({"code": 5000, "msg": str(e)})
+        return jsonify({"code": 5000, "message": str(e)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"code": 7, "message": str(e)})
 
 
 @app.route("/workflow/get", methods=["GET"])
