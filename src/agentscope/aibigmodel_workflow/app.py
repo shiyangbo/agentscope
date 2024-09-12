@@ -86,6 +86,7 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     execute_id = db.Column(db.String(100), primary_key=True)  # 运行ID
     execute_result = db.Column(db.Text)
     user_id = db.Column(db.String(100))  # 用户ID
+    executed_time = db.Column(db.DateTime)
 
 
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
@@ -360,11 +361,22 @@ def workflow_run() -> Response:
         return jsonify({"code": 7, "msg": "execute result not exists"})
     # 数据库存储
     try:
+        # 限制一个用户执行记录为500次，超过500次删除最旧的记录
+        query = db.session.query(_ExecuteTable).filter_by(user_id=user_id)
+        # 获取符合user_id条件的所有记录数
+        count = query.count()
+
+        if count > 500:
+            oldest_record = db.session.query(_ExecuteTable).filter_by(user_id=user_id).order_by(
+                _ExecuteTable.executed_time).first()
+            db.session.delete(oldest_record)
+
         db.session.add(
             _ExecuteTable(
                 execute_id=dag.uuid,
                 execute_result=execute_result,
-                user_id=user_id
+                user_id=user_id,
+                executed_time=datetime.now()
             ),
         )
         db.session.commit()
