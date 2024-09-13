@@ -168,6 +168,8 @@ def plugin_desc_config_generator(data: dict) -> dict:
 
     start_node_dict = {}
     for node in dag_spec_dict['nodes']:
+        if "type" not in node:
+            raise Exception("Invalid node schema")
         if node["type"] == "StartNode":
             start_node_dict = node
             break
