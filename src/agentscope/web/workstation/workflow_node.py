@@ -1704,9 +1704,11 @@ class ApiNode(WorkflowNode):
 
         for i, param_spec in enumerate(params_dict['inputs']):
             param_spec.setdefault('extra', {})
-            param_spec['extra'].setdefault('location', '')
-            if param_spec['extra'].get('location', '') not in {'query', 'body'}:
-                raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
+            # TODO 为了演示先取消防御性拦截
+            param_spec['extra'].setdefault('location', 'query')
+            # param_spec['extra'].setdefault('location', '')
+            # if param_spec['extra'].get('location', '') not in {'query', 'body'}:
+            #     raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
 
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
