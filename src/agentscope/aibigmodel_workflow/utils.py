@@ -97,6 +97,8 @@ def plugin_desc_config_generator(data: dict) -> dict:
     dag_desc = data['pluginDesc']
     dag_desc_example = data['pluginDescription']
     dag_spec_dict = data['pluginSpec']
+    if not isinstance(dag_spec_dict["nodes"], list) or "nodes" not in dag_spec_dict:
+        raise ValueError("Invalid workflow schema format")
 
     openapi_schema_dict = {"openapi": "3.0.0", "info": {
         "title": f"{dag_en_name} API",
