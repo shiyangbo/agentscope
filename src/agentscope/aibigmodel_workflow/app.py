@@ -5,6 +5,9 @@ import os
 import re
 import time
 import sys
+from functools import wraps
+
+from src.agentscope.utils.jwt_auth import parse_jwt_with_claims
 
 sys.path.append('/agentscope/agentscope/src')
 import uuid
@@ -29,6 +32,9 @@ from loguru import logger
 
 import agentscope.aibigmodel_workflow.utils as utils
 from agentscope.web.workstation.workflow_dag import build_dag
+
+from flask import Flask, request, jsonify, g
+
 
 app = Flask(__name__)
 
@@ -126,6 +132,35 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
     plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
     published_time = db.Column(db.DateTime)  # 插件发布时间
 
+
+# 定义不需要 JWT 验证的公开路由
+PUBLIC_ENDPOINTS = []
+
+
+# before_request 钩子函数作为全局中间件
+@app.before_request
+def jwt_auth_middleware():
+    if request.path in PUBLIC_ENDPOINTS:
+        # 如果是公开路由，跳过 JWT 验证
+        return
+
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({"code": 7, "msg": "Token is missing!"})
+
+    # 处理 Bearer token
+    try:
+        token = token.split(" ")[1]  # Bearer <token>
+    except IndexError:
+        return jsonify({"code": 7, "msg": "Invalid token format!"})
+
+    claims, err = parse_jwt_with_claims(token)
+    if err:
+        # 返回错误码和错误信息
+        return jsonify({"code": err['code'], "msg": err['message']})
+
+    # 存储 claims 信息，便于后续请求中使用其中的信息
+    g.claims = claims
 
 # 发布调试成功的workflow
 @app.route("/plugin/api/publish", methods=["POST"])
@@ -502,7 +537,6 @@ def workflow_clone() -> Response:
     data = request.json
     workflow_id = data.get("workflowID")
     user_id = request.headers.get("X-User-Id")
-
     if not workflow_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
