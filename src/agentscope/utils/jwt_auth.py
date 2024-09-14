@@ -1,0 +1,78 @@
+import jwt
+from datetime import datetime, timedelta
+from jwt.exceptions import (
+    DecodeError,
+    ExpiredSignatureError,
+    InvalidSignatureError,
+    InvalidTokenError,
+    ImmatureSignatureError
+)
+
+SECRET_KEY = 'ueWEPeE6TbRIqYIefdUS0O5BXdBZU8Sn'
+
+
+# 按照后端代码model/request/jwt.go，制定自定义声明
+class CustomClaims:
+    def __init__(self, user_id, user_type, username, nickname, buffer_time, exp=None, iss=None, nbf=None, sub=None):
+        self.user_id = user_id  # 用户ID
+        self.user_type = user_type  # 用户类型
+        self.username = username  # 用户名
+        self.nickname = nickname  # 昵称
+        self.buffer_time = buffer_time  # 缓冲时间
+        self.exp = exp  # 过期时间
+        self.iss = iss
+        self.nbf = nbf
+        self.sub = sub  # JWT主体 (subject)
+
+    def to_dict(self):
+        return {
+            "id": self.user_id,
+            "userType": self.user_type,
+            "username": self.username,
+            "nickname": self.nickname,
+            "bufferTime": self.buffer_time,
+            "exp": self.exp,
+            "iss": self.iss,
+            "nbf": self.nbf,
+            "sub": self.sub
+        }
+
+
+# 解析JWT
+def parse_jwt_with_claims(token_input):
+    try:
+        # 解码JWT并验证签名
+        decoded_token = jwt.decode(token_input, SECRET_KEY, algorithms=["HS256"])
+
+        # 使用字典解包来简化claims的构造
+        claims_custom = CustomClaims(**{
+            "user_id": decoded_token.get("id"),
+            "user_type": decoded_token.get("userType"),
+            "username": decoded_token.get("username"),
+            "nickname": decoded_token.get("nickname"),
+            "buffer_time": decoded_token.get("bufferTime"),
+            "exp": decoded_token.get("exp"),
+            "iss": decoded_token.get("iss"),
+            "nbf": decoded_token.get("nbf"),
+            "sub": decoded_token.get("sub"),
+        })
+
+        return claims_custom.to_dict(), None
+
+    except (ExpiredSignatureError, InvalidSignatureError, ImmatureSignatureError, DecodeError) as e:
+        # 使用异常类名来动态返回错误信息
+        error_map = {
+            ExpiredSignatureError: "Token is expired",          # 过期
+            InvalidSignatureError: "TokenMalformed",            # 签名无效
+            ImmatureSignatureError: "Token not active yet",     # 尚未生效
+            InvalidTokenError: "Token is invalid"               # token无效
+        }
+        return None, error_map.get(type(e), "Token error")
+
+
+# if __name__ == '__main__':
+#     token = 'Bearer eyJhbGciOiJIUzI1NisInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJ1c2VybmFtZSI6ImFkbWluIiwibmlja25hbWUiOiJhZG1pbiIsImJ1ZmZlclRpbWUiOjE3MjYyODc0MTcsImV4cCI6MTcyNjMzNzgxNywiaXNzIjoiMSIsIm5iZiI6MTcyNjI4MDIxNywic3ViIjoid2ViIn0.qjkxmE_xF7kqhloIPOQkll3yUsKnIQ20MvgquDYKXjM'
+#     token_in = token.replace('Bearer ', '')
+#     claims, err = parse_jwt_with_claims(token_in)
+#     print(claims)
+#     print(err)
