@@ -145,17 +145,18 @@ def jwt_auth_middleware():
 
     token = request.headers.get('Authorization')
     if not token:
-        return jsonify({'message': 'Token is missing!'}), 403
+        return jsonify({"code": 7, "msg": "Token is missing!"})
 
     # 处理 Bearer token
     try:
         token = token.split(" ")[1]  # Bearer <token>
     except IndexError:
-        return jsonify({'message': 'Invalid token format!'}), 403
+        return jsonify({"code": 7, "msg": "Invalid token format!"})
 
     claims, err = parse_jwt_with_claims(token)
     if err:
-        return jsonify({'message': err}), 401
+        # 返回错误码和错误信息
+        return jsonify({"code": err['code'], "msg": err['message']})
 
     # 存储 claims 信息，便于后续请求中使用其中的信息
     g.claims = claims

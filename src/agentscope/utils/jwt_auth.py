@@ -1,5 +1,4 @@
 import jwt
-from datetime import datetime, timedelta
 from jwt.exceptions import (
     DecodeError,
     ExpiredSignatureError,
@@ -7,13 +6,21 @@ from jwt.exceptions import (
     InvalidTokenError,
     ImmatureSignatureError
 )
+import yaml
+import os
 
-SECRET_KEY = 'ueWEPeE6TbRIqYIefdUS0O5BXdBZU8Sn'
+# key配置文件放在同目录下
+config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+
+with open(config_path, 'r') as config_file:
+    config = yaml.safe_load(config_file)
+
+SECRET_KEY = config['secret_key']
 
 
 # 按照后端代码model/request/jwt.go，制定自定义声明
 class CustomClaims:
-    def __init__(self, user_id, user_type, username, nickname, buffer_time, exp=None, iss=None, nbf=None, sub=None):
+    def __init__(self, user_id, user_type, username, nickname, buffer_time, iss, nbf, exp=None, sub=None):
         self.user_id = user_id  # 用户ID
         self.user_type = user_type  # 用户类型
         self.username = username  # 用户名
@@ -59,19 +66,19 @@ def parse_jwt_with_claims(token_input):
 
         return claims_custom.to_dict(), None
 
-    except (ExpiredSignatureError, InvalidSignatureError, ImmatureSignatureError, DecodeError) as e:
+    except (ExpiredSignatureError, InvalidSignatureError, ImmatureSignatureError, InvalidTokenError) as e:
         # 使用异常类名来动态返回错误信息
         error_map = {
-            ExpiredSignatureError: "Token is expired",          # 过期
-            InvalidSignatureError: "TokenMalformed",            # 签名无效
-            ImmatureSignatureError: "Token not active yet",     # 尚未生效
-            InvalidTokenError: "Token is invalid"               # token无效
+            ExpiredSignatureError: {"code": 1001, "message": "Token is expired"},        # 过期
+            InvalidSignatureError: {"code": 1000, "message": "TokenMalformed"},         # 签名无效
+            ImmatureSignatureError: {"code": 1000, "message": "Token not active yet"},  # 尚未生效
+            InvalidTokenError: {"code": 1000, "message": "Token is invalid"},           # Token无效
         }
-        return None, error_map.get(type(e), "Token error")
+        return None, error_map.get(type(e), {"code": 7, "message": "Unknown Token error"})
 
 
 # if __name__ == '__main__':
-#     token = 'Bearer eyJhbGciOiJIUzI1NisInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJ1c2VybmFtZSI6ImFkbWluIiwibmlja25hbWUiOiJhZG1pbiIsImJ1ZmZlclRpbWUiOjE3MjYyODc0MTcsImV4cCI6MTcyNjMzNzgxNywiaXNzIjoiMSIsIm5iZiI6MTcyNjI4MDIxNywic3ViIjoid2ViIn0.qjkxmE_xF7kqhloIPOQkll3yUsKnIQ20MvgquDYKXjM'
+#     token = 'Bearer eyJhbGiOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJ1c2VybmFtZSI6ImFkbWluIiwibmlja25hbWUiOiJhZG1pbiIsImJ1ZmZlclRpbWUiOjE3MjYyODc0MTcsImV4cCI6MTcyNjMzNzgxNywiaXNzIjoiMSIsIm5iZiI6MTcyNjI4MDIxNywic3ViIjoid2ViIn0.qjkxmE_xF7kqhloIPOQkll3yUsKnIQ20MvgquDYKXjM'
 #     token_in = token.replace('Bearer ', '')
 #     claims, err = parse_jwt_with_claims(token_in)
 #     print(claims)
