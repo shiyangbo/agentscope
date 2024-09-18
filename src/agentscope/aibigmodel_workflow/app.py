@@ -505,7 +505,6 @@ def workflow_save() -> Response:
         return jsonify({"code": 7, "msg": "workflowID and userID is required"})
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
-        _WorkflowTable.config_name == config_name,
         _WorkflowTable.id == workflow_id
     ).all()
     # 不存在记录则报错，存在则更新
