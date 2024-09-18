@@ -536,7 +536,8 @@ def workflow_clone() -> Response:
     """
     data = request.json
     workflow_id = data.get("workflowID")
-    user_id = request.headers.get("X-User-Id")
+    # user_id = request.headers.get("X-User-Id")
+    user_id = g.get('id')
     if not workflow_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
@@ -642,7 +643,8 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
-    user_id = request.headers.get('X-User-Id')
+    # user_id = request.headers.get('X-User-Id')
+    user_id = g.get('id')
     page = request.args.get('pageNo', default=1)
     limit = request.args.get('pageSize', default=10)
     keyword = request.args.get('keyword', default='')
