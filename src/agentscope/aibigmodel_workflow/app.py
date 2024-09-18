@@ -7,7 +7,6 @@ import time
 import sys
 from functools import wraps
 
-from src.agentscope.utils.jwt_auth import parse_jwt_with_claims
 
 sys.path.append('/agentscope/agentscope/src')
 import uuid
@@ -32,6 +31,7 @@ from loguru import logger
 
 import agentscope.aibigmodel_workflow.utils as utils
 from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.utils.jwt_auth import parse_jwt_with_claims
 
 from flask import Flask, request, jsonify, g
 
@@ -134,7 +134,17 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 
 
 # 定义不需要 JWT 验证的公开路由
-PUBLIC_ENDPOINTS = []
+PUBLIC_ENDPOINTS = [
+    "/plugin/api/publish",
+    "/workflow/openapi_schema",
+    "/plugin/api/run_for_bigmodel/<plugin_en_name>",
+    "/node/run_api",
+    "/workflow/run",
+    "/workflow/create",
+    "/workflow/delete",
+    "/workflow/save"
+
+]
 
 
 # before_request 钩子函数作为全局中间件
@@ -537,7 +547,7 @@ def workflow_clone() -> Response:
     data = request.json
     workflow_id = data.get("workflowID")
     # user_id = request.headers.get("X-User-Id")
-    user_id = g.get('id')
+    user_id = g.claims.get('id')
     if not workflow_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
@@ -644,7 +654,7 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     Reads and returns workflow data from the specified JSON file.
     """
     # user_id = request.headers.get('X-User-Id')
-    user_id = g.get('id')
+    user_id = g.claims.get('id')
     page = request.args.get('pageNo', default=1)
     limit = request.args.get('pageSize', default=10)
     keyword = request.args.get('keyword', default='')
