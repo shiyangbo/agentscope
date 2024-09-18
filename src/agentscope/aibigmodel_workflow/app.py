@@ -444,6 +444,7 @@ def workflow_create() -> Response:
     ).all()
     if not workflow_results:
         try:
+            dag_content = utils.gennerate_workflow_schema_template()
             workflow_id = uuid.uuid4()
             db.session.add(
                 _WorkflowTable(
@@ -453,7 +454,8 @@ def workflow_create() -> Response:
                     config_en_name=config_en_name,
                     config_desc=config_desc,
                     status=utils.WorkflowStatus.WORKFLOW_DRAFT,
-                    updated_time=datetime.now()
+                    updated_time=datetime.now(),
+                    dag_content=dag_content
                 ),
             )
             db.session.commit()

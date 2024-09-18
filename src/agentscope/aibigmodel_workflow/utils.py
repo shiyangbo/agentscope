@@ -1,5 +1,5 @@
-from app import SERVICE_URL
-
+import uuid
+import json
 
 class WorkflowStatus:  # type: ignore[name-defined]
     WORKFLOW_PUBLISHED = "published",  # 已发布状态
@@ -189,3 +189,67 @@ def plugin_desc_config_generator(data: dict) -> dict:
         }
 
     return openapi_schema_dict
+
+
+def gennerate_workflow_schema_template() -> str:
+    start_node_id = str(uuid.uuid4())
+    end_node_id = str(uuid.uuid4())
+    workflow_schema = {
+        "edges": [
+            {
+                "source_node_id": start_node_id,
+                "target_node_id": end_node_id
+            }
+        ],
+        "nodes": [
+            {
+                "data": {
+                    "inputs": [],
+                    "outputs": [
+                        {
+                            "name": "",
+                            "type": "string",
+                            "desc": "",
+                            "object_schema": None,
+                            "list_schema": None,
+                            "value": {
+                                "type": "generated",
+                                "content": None
+                            }
+                        }
+                    ],
+                    "settings": {}
+                },
+                "id": start_node_id,
+                "name": "开始",
+                "type": "StartNode"
+            },
+            {
+                "data": {
+                    "inputs": [
+                        {
+                            "name": "",
+                            "type": "string",
+                            "desc": "",
+                            "object_schema": None,
+                            "list_schema": None,
+                            "value": {
+                                "type": "ref",
+                                "content": {
+                                    "ref_node_id": "",
+                                    "ref_var_name": ""
+                                }
+                            }
+                        }
+                    ],
+                    "outputs": [],
+                    "settings": {}
+                },
+                "id": end_node_id,
+                "name": "结束",
+                "type": "EndNode"
+            }
+        ]
+    }
+    workflow_schema_json = json.dumps(workflow_schema)
+    return workflow_schema_json
