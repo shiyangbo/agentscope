@@ -191,16 +191,10 @@ def plugin_desc_config_generator(data: dict) -> dict:
     return openapi_schema_dict
 
 
-def gennerate_workflow_schema_template() -> str:
+def generate_workflow_schema_template() -> str:
     start_node_id = str(uuid.uuid4())
     end_node_id = str(uuid.uuid4())
     workflow_schema = {
-        "edges": [
-            {
-                "source_node_id": start_node_id,
-                "target_node_id": end_node_id
-            }
-        ],
         "nodes": [
             {
                 "data": {
@@ -212,6 +206,7 @@ def gennerate_workflow_schema_template() -> str:
                             "desc": "",
                             "object_schema": None,
                             "list_schema": None,
+                            "required": "false",
                             "value": {
                                 "type": "generated",
                                 "content": None
@@ -233,6 +228,7 @@ def gennerate_workflow_schema_template() -> str:
                             "desc": "",
                             "object_schema": None,
                             "list_schema": None,
+                            "required": "false",
                             "value": {
                                 "type": "ref",
                                 "content": {

@@ -444,7 +444,7 @@ def workflow_create() -> Response:
     ).all()
     if not workflow_results:
         try:
-            dag_content = utils.gennerate_workflow_schema_template()
+            dag_content = utils.generate_workflow_schema_template()
             workflow_id = uuid.uuid4()
             db.session.add(
                 _WorkflowTable(
