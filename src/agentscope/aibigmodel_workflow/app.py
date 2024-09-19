@@ -534,7 +534,7 @@ def workflow_save() -> Response:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"code": 5000, "msg": str(e)})
+            return jsonify({"code": 5000, "msg": "英文名称已存在, 请重新填写"})
         data = {"workflowID": str(workflow_id)}
         return jsonify({"code": 0, "data": data, "msg": "Workflow file saved successfully"})
     else:
