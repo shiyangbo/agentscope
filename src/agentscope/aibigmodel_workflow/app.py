@@ -519,6 +519,12 @@ def workflow_save() -> Response:
     # 不存在记录则报错，存在则更新
     if workflow_results:
         # 查询数据库中是否有除这个workflow_id以外config_en_name相同的记录
+        en_name_check = _WorkflowTable.query.filter(
+            _WorkflowTable.user_id == user_id,
+            _WorkflowTable.config_en_name == config_en_name
+        ).all()
+        if en_name_check:
+            return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
         try:
             workflow = json.dumps(workflow_dict)
             # 防御性措施
@@ -534,7 +540,7 @@ def workflow_save() -> Response:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"code": 5000, "msg": "英文名称已存在, 请重新填写"})
+            return jsonify({"code": 5000, "msg": str(e)})
         data = {"workflowID": str(workflow_id)}
         return jsonify({"code": 0, "data": data, "msg": "Workflow file saved successfully"})
     else:
