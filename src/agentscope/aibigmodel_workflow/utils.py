@@ -195,6 +195,8 @@ def generate_workflow_schema_template() -> str:
     start_node_id = str(uuid.uuid4())
     end_node_id = str(uuid.uuid4())
     workflow_schema = {
+        "edges": [
+        ],
         "nodes": [
             {
                 "data": {
