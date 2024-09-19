@@ -1302,6 +1302,11 @@ class StartNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.output_params |= param_one_dict
 
@@ -1415,6 +1420,11 @@ class EndNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.input_params |= param_one_dict
 
@@ -1526,6 +1536,11 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.input_params['params'] |= param_one_dict
 
@@ -1618,6 +1633,11 @@ class PythonServiceUserTypingNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
@@ -1703,12 +1723,15 @@ class ApiNode(WorkflowNode):
             raise Exception(f"header:{self.api_header} type is not dict")
 
         for i, param_spec in enumerate(params_dict['inputs']):
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_spec.setdefault('extra', {})
-            # TODO 为了演示先取消防御性拦截
+            # 防御性措施
             param_spec['extra'].setdefault('location', 'query')
-            # param_spec['extra'].setdefault('location', '')
-            # if param_spec['extra'].get('location', '') not in {'query', 'body'}:
-            #     raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
+            if param_spec['extra']['location'] not in {'query', 'body'}:
+                raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
 
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
@@ -1727,6 +1750,11 @@ class ApiNode(WorkflowNode):
             #     "object_schema": null,
             #     "list_schema": null,
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
 
@@ -1779,6 +1807,11 @@ class ApiNode(WorkflowNode):
             #         "location": "query"
             #     }
             # }
+
+            # 防御性措施
+            if param_spec.get('name', '') == '':
+                continue
+
             param_one_dict_for_query, param_one_dict_for_body \
                 = self.dag_obj.generate_node_param_real_for_api_input(param_spec)
 
