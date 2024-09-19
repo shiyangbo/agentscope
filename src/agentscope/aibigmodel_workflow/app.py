@@ -135,8 +135,6 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 
 # 定义不需要 JWT 验证的公开路由
 PUBLIC_ENDPOINTS = [
-    "/node/run_python",
-    "/node/run_api",
     "/plugin/api/run_for_bigmodel/<plugin_en_name>"
 ]
 
@@ -172,7 +170,7 @@ def plugin_publish() -> Response:
     workflow_id = request.json.get("workflowID")
     pluginField = request.json.get("pluginField")
     description = request.json.get("pluginQuestionExample")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     # 查询workflow_info表获取插件信息
     workflow_result = _WorkflowTable.query.filter(
         _WorkflowTable.id == workflow_id
@@ -233,7 +231,7 @@ def plugin_publish() -> Response:
 @app.route("/workflow/openapi_schema", methods=["GET"])
 def plugin_openapi_schema() -> tuple[Response, int] | Response:
     workflow_id = request.args.get("workflowID")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
 
     if workflow_id == "":
         return jsonify({"code": 7, "msg": "workflow id not found"})
@@ -379,7 +377,7 @@ def workflow_run() -> Response:
         return jsonify({"code": 7, "msg": f"input param type is {type(content)}, not dict"})
 
     workflow_schema = request.json.get("workflowSchema")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     logger.info(f"workflow_schema: {workflow_schema}")
 
     try:
@@ -441,7 +439,7 @@ def workflow_create() -> Response:
     config_desc = data.get("configDesc")
     if not config_name or not config_en_name or not config_desc:
         return jsonify({"code": 7, "msg": "configName,configENName,configDesc is required"})
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     # 查询表中同一用户下是否有重复config_en_name的记录
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
@@ -481,7 +479,7 @@ def workflow_create() -> Response:
 @app.route("/workflow/delete", methods=["DELETE"])
 def workflow_delete() -> Response:
     workflow_id = request.json.get("workflowID")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
         _WorkflowTable.id == workflow_id
@@ -511,7 +509,7 @@ def workflow_save() -> Response:
     config_desc = data.get("configDesc")
     workflow_dict = data.get("workflowSchema")
     workflow_id = data.get("workflowID")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     if not workflow_id or not user_id:
         return jsonify({"code": 7, "msg": "workflowID and userID is required"})
     workflow_results = _WorkflowTable.query.filter(
@@ -550,7 +548,7 @@ def workflow_clone() -> Response:
     """
     data = request.json
     workflow_id = data.get("workflowID")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     if not workflow_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
@@ -606,7 +604,7 @@ def workflow_get() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     workflow_id = request.args.get('workflowID')
     if not workflow_id:
         return jsonify({"error": "workflowID is required"}), 7
@@ -637,7 +635,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
     Reads and returns workflow process results from the specified JSON file.
     """
     execute_id = request.args.get("executeID")
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id, user_id=user_id).first()
     if not workflow_result:
         return jsonify({"code": 7, "msg": "workflow_result not exists"})
@@ -657,7 +655,7 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     """
     Reads and returns workflow data from the specified JSON file.
     """
-    user_id = g.claims.get('id')
+    user_id = g.claims.get("user_id")
     page = request.args.get('pageNo', default=1)
     limit = request.args.get('pageSize', default=10)
     keyword = request.args.get('keyword', default='')

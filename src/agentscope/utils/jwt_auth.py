@@ -28,13 +28,13 @@ class CustomClaims:
         self.buffer_time = buffer_time  # 缓冲时间
         self.exp = exp  # 过期时间
         self.iss = iss
-        self.nbf = nbf
+        self.nbf = nbf  # 开始生效时间
         self.sub = sub  # JWT主体 (subject)
 
     def to_dict(self):
         return {
-            "id": self.user_id,
-            "userType": self.user_type,
+            "user_id": self.user_id,
+            "user_type": self.user_type,
             "username": self.username,
             "nickname": self.nickname,
             "bufferTime": self.buffer_time,
@@ -49,12 +49,18 @@ class CustomClaims:
 def parse_jwt_with_claims(token_input):
     try:
         # 解码JWT并验证签名
-        decoded_token = jwt.decode(token_input, SECRET_KEY, algorithms=["HS256"])
+        decoded_token = jwt.decode(token_input,
+                                   SECRET_KEY,
+                                   algorithms=["HS256"],
+                                   options={
+                                       "require_exp": True,  # 必须有 exp
+                                       "require_nbf": True   # 必须有 nbf
+                                        })
 
         # 使用字典解包来简化claims的构造
         claims_custom = CustomClaims(**{
-            "user_id": decoded_token.get("id"),
-            "user_type": decoded_token.get("userType"),
+            "user_id": decoded_token.get("user_id"),
+            "user_type": decoded_token.get("user_type"),
             "username": decoded_token.get("username"),
             "nickname": decoded_token.get("nickname"),
             "buffer_time": decoded_token.get("bufferTime"),
