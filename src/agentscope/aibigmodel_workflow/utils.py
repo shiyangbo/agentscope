@@ -12,6 +12,9 @@ def workflow_format_convert(origin_dict: dict) -> dict:
     edges = origin_dict.get("edges", [])
 
     for node in nodes:
+        if len(node) == 0:
+            raise Exception(f"异常: 前端透传了空节点，请确认")
+
         node_id = node["id"]
         node_data = {
             "data": {
