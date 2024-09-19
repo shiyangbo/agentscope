@@ -522,11 +522,11 @@ def workflow_save() -> Response:
     if workflow_results:
         # 查询数据库中是否有除这个workflow_id以外config_en_name相同的记录
         try:
+            workflow = json.dumps(workflow_dict)
             # 防御性措施
             if len(workflow_dict['nodes']) == 0 or workflow_dict['nodes'] == [{}]:
-                workflow_dict = utils.generate_workflow_schema_template()
-            
-            workflow = json.dumps(workflow_dict)
+                workflow = utils.generate_workflow_schema_template()
+
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
                 {_WorkflowTable.config_name: config_name,
                  _WorkflowTable.config_en_name: config_en_name,
