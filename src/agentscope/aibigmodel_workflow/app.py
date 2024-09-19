@@ -101,7 +101,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.String(100), primary_key=True)  # workflowID
     user_id = db.Column(db.String(100))  # 用户ID
     config_name = db.Column(db.String(100))
-    config_en_name = db.Column(db.String(100), unique=True)
+    config_en_name = db.Column(db.String(100))
     config_desc = db.Column(db.Text)
     dag_content = db.Column(db.Text, default='{}')
     status = db.Column(db.String(10))
