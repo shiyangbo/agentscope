@@ -34,7 +34,7 @@ class CustomClaims:
     def to_dict(self):
         return {
             "user_id": self.user_id,
-            "user_type": self.user_type,
+            "userType": self.user_type,
             "username": self.username,
             "nickname": self.nickname,
             "bufferTime": self.buffer_time,
@@ -59,8 +59,8 @@ def parse_jwt_with_claims(token_input):
 
         # 使用字典解包来简化claims的构造
         claims_custom = CustomClaims(**{
-            "user_id": decoded_token.get("user_id"),
-            "user_type": decoded_token.get("user_type"),
+            "user_id": decoded_token.get("id"),
+            "user_type": decoded_token.get("userType"),
             "username": decoded_token.get("username"),
             "nickname": decoded_token.get("nickname"),
             "buffer_time": decoded_token.get("bufferTime"),
@@ -84,7 +84,7 @@ def parse_jwt_with_claims(token_input):
 
 
 # if __name__ == '__main__':
-#     token = 'Bearer eyJhbGiOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJ1c2VybmFtZSI6ImFkbWluIiwibmlja25hbWUiOiJhZG1pbiIsImJ1ZmZlclRpbWUiOjE3MjYyODc0MTcsImV4cCI6MTcyNjMzNzgxNywiaXNzIjoiMSIsIm5iZiI6MTcyNjI4MDIxNywic3ViIjoid2ViIn0.qjkxmE_xF7kqhloIPOQkll3yUsKnIQ20MvgquDYKXjM'
+#     token = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJ1c2VybmFtZSI6ImFkbWluIiwibmlja25hbWUiOiJhZG1pbiIsImJ1ZmZlclRpbWUiOjE3MjY3OTA0MDAsImV4cCI6MTcyNjc5MDQwMCwiaXNzIjoiMSIsIm5iZiI6MTcyNjcyNzU4OCwic3ViIjoid2ViIn0.Ls_IsC2EVP0OygPJKrxjSwSdpi_3-kqLRPf8WPpxe1U'
 #     token_in = token.replace('Bearer ', '')
 #     claims, err = parse_jwt_with_claims(token_in)
 #     print(claims)
