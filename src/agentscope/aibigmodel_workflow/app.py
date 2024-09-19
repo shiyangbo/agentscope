@@ -224,6 +224,7 @@ def plugin_publish() -> Response:
         db.session.rollback()
         return jsonify({"code": 7, "msg": str(e)})
     except Exception as e:
+        logger.error(f"plugin_publish failed: {e}")
         return jsonify({"code": 7, "msg": str(e)})
 
     return jsonify({"code": 0, "msg": "Workflow file published successfully"})
@@ -277,6 +278,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         converted_config = utils.workflow_format_convert(config)
         dag = build_dag(converted_config)
     except Exception as e:
+        logger.error(f"plugin_run_for_bigmodel failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})
 
     # 调用运行dag
@@ -321,6 +323,7 @@ def node_run_api() -> Response:
         node_config = utils.node_format_convert(node)
         dag = build_dag(node_config)
     except Exception as e:
+        logger.error(f"node_run_api failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})
 
     # content中的data内容
@@ -352,6 +355,7 @@ def node_run_python() -> Response:
         logger.info(f"config: {converted_config}")
         dag = build_dag(converted_config)
     except Exception as e:
+        logger.error(f"node_run_python failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})
 
     result, nodes_result = dag.run_with_param(content, node_schema)
@@ -384,6 +388,7 @@ def workflow_run() -> Response:
         logger.info(f"config: {converted_config}")
         dag = build_dag(converted_config)
     except Exception as e:
+        logger.error(f"workflow_run failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})
 
     start_time = time.time()
@@ -588,6 +593,7 @@ def workflow_clone() -> Response:
         return jsonify({"code": 5000, "message": str(e)})
     except Exception as e:
         db.session.rollback()
+        logger.error(f"workflow_clone failed: {e}")
         return jsonify({"code": 7, "message": str(e)})
 
 
