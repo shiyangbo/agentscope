@@ -515,15 +515,15 @@ def workflow_save() -> Response:
     workflow_results = _WorkflowTable.query.filter(
         _WorkflowTable.user_id == user_id,
         _WorkflowTable.id == workflow_id
-    ).all()
+    ).first()
     # 不存在记录则报错，存在则更新
     if workflow_results:
         # 查询数据库中是否有除这个workflow_id以外config_en_name相同的记录
         en_name_check = _WorkflowTable.query.filter(
             _WorkflowTable.user_id == user_id,
             _WorkflowTable.config_en_name == config_en_name
-        ).all()
-        if en_name_check:
+        ).first()
+        if en_name_check and config_en_name != workflow_results.config_en_name:
             return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
         try:
             workflow = json.dumps(workflow_dict)
