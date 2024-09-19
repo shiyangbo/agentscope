@@ -1819,6 +1819,110 @@ class ApiNode(WorkflowNode):
         return self.output_params
 
 
+class SwitchNode(WorkflowNode):
+    """
+    A node representing a switch-case structure within a workflow.
+
+    SwitchPipelineNode routes the execution to different node nodes
+    based on the evaluation of a specified key or condition.
+    """
+
+    node_type = WorkflowNodeType.PIPELINE
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            dag_obj: Optional[ASDiGraph] = None,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        # opt_kwargs 包含用户定义的节点输入变量
+        self.input_params = {'params': {}}
+        self.output_params = {}
+        self.output_params_spec = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
+        self.running_message = ""
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
+        assert 0 < len(self.dep_opts), (
+            "SwitchPipelineNode must contain at least " "one PipelineNode."
+        )
+        case_operators = {}
+        self.case_operators_var = {}
+
+        # if len(self.dep_opts) == len(self.opt_kwargs["cases"]):
+        #     # No default_operators provided
+        #     default_operators = placeholder
+        #     self.default_var_name = "placeholder"
+        # elif len(self.dep_opts) == len(self.opt_kwargs["cases"]) + 1:
+        #     # default_operators provided
+        #     default_operators = self.dep_opts.pop(-1)
+        #     self.default_var_name = self.dep_vars.pop(-1)
+        # else:
+        #     raise ValueError(
+        #         f"SwitchPipelineNode deps {self.dep_opts} not matches "
+        #         f"cases {self.opt_kwargs['cases']}.",
+        #     )
+        #
+        for key, value, var in zip(
+                self.opt_kwargs["cases"],
+                self.dep_opts,
+                self.dep_vars,
+        ):
+            case_operators[key] = value.pipeline
+            self.case_operators_var[key] = var
+        # self.opt_kwargs.pop("cases")
+        # self.source_kwargs.pop("cases")
+        # self.pipeline = SwitchPipeline(
+        #     case_operators=case_operators,
+        #     default_operators=default_operators,  # type: ignore[arg-type]
+        #     **self.opt_kwargs,
+        # )
+
+    def __call__(self, x: dict = None) -> dict:
+        return self.pipeline(x)
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        if 'logic' not in params_dict['inputs']:
+            raise Exception("url key not found in inputs")
+        if 'conditions' not in params_dict['inputs']:
+            raise Exception("http_method key not found in inputs")
+
+        execs = f"{DEFAULT_FLOW_VAR} = {self.var_name}({DEFAULT_FLOW_VAR})"
+        return {
+            "imports": imports,
+            "inits": f"{self.var_name} = SwitchPipeline(case_operators="
+                     f"{dict_converter(self.case_operators_var)}, "
+                     f"default_operators={self.default_var_name},"
+                     f" {kwarg_converter(self.source_kwargs)})",
+            "execs": execs,
+        }
+
+
 NODE_NAME_MAPPING = {
     "dashscope_chat": ModelNode,
     "openai_chat": ModelNode,
