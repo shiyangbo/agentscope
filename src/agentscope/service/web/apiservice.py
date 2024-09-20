@@ -58,6 +58,7 @@ def api_request(
             json=json,
             headers=headers,
             timeout=30,  # 简单设置最大超时阈值成30秒
+            verify=False,
             **kwargs,
         )
         resp.raise_for_status()  # Raise an error for bad responses
