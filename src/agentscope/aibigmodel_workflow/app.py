@@ -133,16 +133,17 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 
 # 定义不需要 JWT 验证的公开路由
 PUBLIC_ENDPOINTS = [
-    "/plugin/api/run_for_bigmodel/<plugin_en_name>"
+    "/plugin/api/run_for_bigmodel/"
 ]
 
 
 # before_request 钩子函数作为全局中间件
 @app.before_request
 def jwt_auth_middleware():
-    if request.path in PUBLIC_ENDPOINTS:
+    for url in PUBLIC_ENDPOINTS:
         # 如果是公开路由，跳过 JWT 验证
-        return
+        if url in request.path:
+            return
 
     token = request.headers.get('Authorization')
     if not token:
