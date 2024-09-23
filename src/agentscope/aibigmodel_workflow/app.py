@@ -7,7 +7,6 @@ import time
 import sys
 from functools import wraps
 
-
 sys.path.append('/agentscope/agentscope/src')
 import uuid
 import yaml
@@ -34,7 +33,6 @@ from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.utils.jwt_auth import parse_jwt_with_claims
 
 from flask import Flask, request, jsonify, g
-
 
 app = Flask(__name__)
 
@@ -148,13 +146,13 @@ def jwt_auth_middleware():
 
     token = request.headers.get('Authorization')
     if not token:
-        return jsonify({"code": 7, "msg": "Token is missing!"})
+        return jsonify({"code": 1002, "msg": "Token is missing!"})
 
     # 处理 Bearer token
     try:
         token = token.split(" ")[1]  # Bearer <token>
     except IndexError:
-        return jsonify({"code": 7, "msg": "Invalid token format!"})
+        return jsonify({"code": 1000, "msg": "Invalid token format!"})
 
     claims, err = parse_jwt_with_claims(token)
     if err:
@@ -163,6 +161,7 @@ def jwt_auth_middleware():
 
     # 存储 claims 信息，便于后续请求中使用其中的信息
     g.claims = claims
+
 
 # 发布调试成功的workflow
 @app.route("/plugin/api/publish", methods=["POST"])
@@ -466,10 +465,10 @@ def workflow_create() -> Response:
             db.session.rollback()
             return jsonify({"code": 7, "msg": str(e)})
         data = {
-                "workflowID": str(workflow_id),
-                "configName": config_name,
-                "configENName": config_en_name,
-                "configDesc": config_desc
+            "workflowID": str(workflow_id),
+            "configName": config_name,
+            "configENName": config_en_name,
+            "configDesc": config_desc
         }
         return jsonify({"code": 0, "data": data, "msg": "Workflow file created successfully"})
     else:
@@ -566,11 +565,13 @@ def workflow_clone() -> Response:
     if not workflow_config:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
 
-    new_config_name = f"{workflow_config.config_name}_副本"
-    new_config_en_name = f"{workflow_config.config_en_name}_copy"
-    existing_copy = _WorkflowTable.query.filter(_WorkflowTable.config_en_name == new_config_en_name).first()
-    if existing_copy:
-        return jsonify({"code": 7, "message": f"'{new_config_en_name}' already exists"})
+    existing_copies = _WorkflowTable.query.filter(
+        _WorkflowTable.config_en_name.startswith(f"{workflow_config.config_en_name}_")).count()
+    new_config_en_name = (f"{workflow_config.config_en_name}_" +(str(
+        existing_copies + 1) if existing_copies >= 0 else ""))
+    new_config_name = (f"{workflow_config.config_name}_副本" +(str(
+        existing_copies + 1) if existing_copies >= 0 else ""))
+
     try:
         # 生成新的工作流 ID
         new_workflow_id = uuid.uuid4()
@@ -621,10 +622,10 @@ def workflow_get() -> tuple[Response, int] | Response:
 
     dag_content = json.loads(workflow_config.dag_content)
     data = {
-            "configName": workflow_config.config_name,
-            "configENName": workflow_config.config_en_name,
-            "configDesc": workflow_config.config_desc,
-            "workflowSchema": dag_content
+        "configName": workflow_config.config_name,
+        "configENName": workflow_config.config_en_name,
+        "configDesc": workflow_config.config_desc,
+        "workflowSchema": dag_content
     }
     return jsonify(
         {
