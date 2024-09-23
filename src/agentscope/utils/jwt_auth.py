@@ -80,7 +80,7 @@ def parse_jwt_with_claims(token_input):
             ImmatureSignatureError: {"code": 1000, "message": "Token not active yet"},  # 尚未生效
             InvalidTokenError: {"code": 1000, "message": "Token is invalid"},           # Token无效
         }
-        return None, error_map.get(type(e), {"code": 7, "message": "Unknown Token error"})
+        return None, error_map.get(type(e), {"code": 1000, "message": "Unknown Token error"})
 
 
 # if __name__ == '__main__':
