@@ -550,7 +550,8 @@ def workflow_save() -> Response:
                  _WorkflowTable.config_en_name: config_en_name,
                  _WorkflowTable.config_desc: config_desc,
                  _WorkflowTable.dag_content: workflow,
-                 _WorkflowTable.updated_time: datetime.now()})
+                 _WorkflowTable.updated_time: datetime.now(),
+                 _WorkflowTable.execute_status: ""})
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -581,7 +582,7 @@ def workflow_clone() -> Response:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
 
     existing_copies = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name.contains(f"{workflow_config.config_en_name}_")).count()
+        _WorkflowTable.config_en_name.startswith(f"{workflow_config.config_en_name}_")).count()
     new_config_en_name = (f"{workflow_config.config_en_name}_" + (str(
         existing_copies + 1) if existing_copies >= 0 else ""))
     new_config_name = (f"{workflow_config.config_name}_副本" + (str(
