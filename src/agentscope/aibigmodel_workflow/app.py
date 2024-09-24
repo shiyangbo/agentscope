@@ -520,6 +520,9 @@ def workflow_save() -> Response:
     data = request.json
     config_name = data.get("configName")
     config_en_name = data.get("configENName")
+    if ' ' in config_en_name:
+        return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
+
     config_desc = data.get("configDesc")
     workflow_dict = data.get("workflowSchema")
     workflow_id = data.get("workflowID")
