@@ -36,6 +36,10 @@ from flask import Flask, request, jsonify, g
 
 app = Flask(__name__)
 
+# 设置时区为东八区
+os.environ['TZ'] = 'Asia/Shanghai'
+time.tzset()
+
 # 读取 YAML 文件
 test_without_mysql = False
 if test_without_mysql:
