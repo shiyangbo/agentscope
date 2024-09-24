@@ -91,6 +91,7 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     execute_result = db.Column(db.Text)
     user_id = db.Column(db.String(100))  # 用户ID
     executed_time = db.Column(db.DateTime)
+    workflow_id = db.Column(db.String(100))  # workflowID
 
 
 class _WorkflowTable(db.Model):  # type: ignore[name-defined]
@@ -104,6 +105,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     dag_content = db.Column(db.Text, default='{}')
     status = db.Column(db.String(10))
     updated_time = db.Column(db.DateTime)
+    execute_status = db.Column(db.String(10))
 
     def to_dict(self):
         return {
@@ -178,6 +180,8 @@ def plugin_publish() -> Response:
     if not workflow_result:
         return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
+    if workflow_result.execute_status != "success":
+        return jsonify({"code": 7, "msg": "Workflow did not run successfully, unable to publish"})
     # 插件描述信息生成，对接智能体格式
     dag_content = json.loads(workflow_result.dag_content)
     data = {
@@ -377,6 +381,7 @@ def workflow_run() -> Response:
         return jsonify({"code": 7, "msg": f"input param type is {type(content)}, not dict"})
 
     workflow_schema = request.json.get("workflowSchema")
+    workflow_id = request.json.get("workflowID")
     user_id = g.claims.get("user_id")
     logger.info(f"workflow_schema: {workflow_schema}")
 
@@ -418,9 +423,12 @@ def workflow_run() -> Response:
                 execute_id=dag.uuid,
                 execute_result=execute_result,
                 user_id=user_id,
-                executed_time=datetime.now()
+                executed_time=datetime.now(),
+                workflow_id=workflow_id
             ),
         )
+        db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
+            {_WorkflowTable.execute_status: execute_status})
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -437,6 +445,8 @@ def workflow_create() -> Response:
     config_name = data.get("configName")
     config_en_name = data.get("configENName")
     config_desc = data.get("configDesc")
+    if ' ' in config_en_name:
+        return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
     if not config_name or not config_en_name or not config_desc:
         return jsonify({"code": 7, "msg": "configName,configENName,configDesc is required"})
     user_id = g.claims.get("user_id")
@@ -568,9 +578,9 @@ def workflow_clone() -> Response:
 
     existing_copies = _WorkflowTable.query.filter(
         _WorkflowTable.config_en_name.startswith(f"{workflow_config.config_en_name}_")).count()
-    new_config_en_name = (f"{workflow_config.config_en_name}_" +(str(
+    new_config_en_name = (f"{workflow_config.config_en_name}_" + (str(
         existing_copies + 1) if existing_copies >= 0 else ""))
-    new_config_name = (f"{workflow_config.config_name}_副本" +(str(
+    new_config_name = (f"{workflow_config.config_name}_副本" + (str(
         existing_copies + 1) if existing_copies >= 0 else ""))
 
     try:
@@ -649,6 +659,7 @@ def workflow_get_process() -> tuple[Response, int] | Response:
         return jsonify({"code": 7, "msg": "workflow_result not exists"})
 
     workflow_result.execute_result = json.loads(workflow_result.execute_result)
+
     return jsonify(
         {
             "code": 0,
