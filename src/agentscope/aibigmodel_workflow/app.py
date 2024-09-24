@@ -550,7 +550,8 @@ def workflow_save() -> Response:
                  _WorkflowTable.config_en_name: config_en_name,
                  _WorkflowTable.config_desc: config_desc,
                  _WorkflowTable.dag_content: workflow,
-                 _WorkflowTable.updated_time: datetime.now()})
+                 _WorkflowTable.updated_time: datetime.now(),
+                 _WorkflowTable.execute_status: ""})
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
