@@ -581,13 +581,23 @@ def workflow_clone() -> Response:
     if not workflow_config:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
 
-    existing_copies = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name.startswith(f"{workflow_config.config_en_name}_")).count()
-    new_config_en_name = (f"{workflow_config.config_en_name}_" + (str(
-        existing_copies + 1) if existing_copies >= 0 else ""))
-    new_config_name = (f"{workflow_config.config_name}_副本" + (str(
-        existing_copies + 1) if existing_copies >= 0 else ""))
+    # 查询相同名称的工作流配置，并为新副本生成唯一的名称
+    existing_config_copies = _WorkflowTable.query.filter(
+        _WorkflowTable.config_en_name.like(f"{workflow_config.config_en_name}%"),
+        _WorkflowTable.user_id == user_id
+    ).all()
 
+    # 计算新的名称后缀，找出最大后缀
+    existing_suffixes = []
+    for config_copy in existing_config_copies:
+        match = re.match(rf"{re.escape(workflow_config.config_en_name)}_(\d+)", config_copy.config_en_name)
+        if match:
+            existing_suffixes.append(int(match.group(1)))
+    # 找出最大后缀
+    name_suffix = max(existing_suffixes, default=0) + 1
+    # 生成新的配置名称和状态
+    new_config_name = f"{workflow_config.config_name}_副本{name_suffix}"
+    new_config_en_name = f"{workflow_config.config_en_name}_{name_suffix}"
     try:
         # 生成新的工作流 ID
         new_workflow_id = uuid.uuid4()
