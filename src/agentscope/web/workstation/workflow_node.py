@@ -44,6 +44,8 @@ from agentscope.service import (
     service_status,
 )
 
+from agentscope.service.web.apiservice import api_request_for_big_model
+
 try:
     import networkx as nx
 except ImportError:
@@ -360,6 +362,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.END,
             WorkflowNodeType.PYTHON,
             WorkflowNodeType.API,
+            WorkflowNodeType.LLM,
         ]:
             raise NotImplementedError(node_cls)
 
@@ -441,6 +444,7 @@ class WorkflowNodeType(IntEnum):
     END = 7
     PYTHON = 8
     API = 9
+    LLM = 10
 
 
 class WorkflowNode(ABC):
@@ -1853,6 +1857,193 @@ class ApiNode(WorkflowNode):
         return self.output_params
 
 
+class LLMNode(WorkflowNode):
+    """
+    LLM Node.
+    """
+
+    node_type = WorkflowNodeType.LLM
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            dag_obj: Optional[ASDiGraph] = None,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        self.input_params = {}
+        self.output_params = {}
+        self.output_params_spec = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = "init"
+        self.running_message = ''
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
+
+        # GET or POST
+        self.api_url = ""
+        self.api_header = {}
+        self.input_params_for_query = {}
+        self.input_params_for_body = {}
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        if 'model' not in params_dict['settings']:
+            raise Exception("model not found in settings")
+        if 'headers' not in params_dict['settings']:
+            raise Exception("headers key not found in settings")
+
+        # 调用内部函数，将LLM Model请求参数组合为大模型可以识别的参数
+        params_dict = LLMNode.convert_llm_request(params_dict)
+        self.api_url = params_dict['settings']['url']
+        self.api_header = params_dict['settings']['headers']
+        if not isinstance(self.api_header, dict):
+            raise Exception(f"header:{self.api_header} type is not dict")
+
+        for i, param_spec in enumerate(params_dict['inputs']):
+            param_spec.setdefault('extra', {})
+            param_spec['extra'].setdefault('location', '')
+            if param_spec['extra'].get('location', '') not in {'query', 'body'}:
+                raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
+
+        for i, param_spec in enumerate(params_dict['outputs']):
+            param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
+            self.output_params_spec = param_one_dict
+
+        return {
+            "imports": "",
+            "inits": "",
+            "execs": "",
+        }
+
+    def __call__(self, *args, **kwargs):
+        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        if len(kwargs) == 0:
+            self.running_status = 'init'
+            return {}
+
+        self.running_status = 'running'
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = 'success'
+            return self.output_params
+        except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
+            self.running_status = 'failed'
+            self.running_message = f'{repr(err)}'
+            return {}
+
+    def run(self, *args, **kwargs):
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
+
+        # 1. 建立参数映射
+        params_dict = self.opt_kwargs
+
+        for i, param_spec in enumerate(params_dict['inputs']):
+            param_one_dict_for_query, param_one_dict_for_body \
+                = self.dag_obj.generate_node_param_real_for_api_input(param_spec)
+
+            if not isinstance(param_one_dict_for_query, dict):
+                raise Exception("input param: {param_one_dict_for_query} type not dict")
+            if not isinstance(param_one_dict_for_body, dict):
+                raise Exception("input param: {param_one_dict_for_body} type not dict")
+
+            self.input_params |= param_one_dict_for_query
+            self.input_params |= param_one_dict_for_body
+            self.input_params_for_query |= param_one_dict_for_query
+            self.input_params_for_body |= param_one_dict_for_body
+
+        # 大模型参数校验
+        temperature = self.input_params_for_body.get('temperature', None)
+        if not temperature or not (0 <= temperature <= 1):
+            raise Exception("温度参数错误，应该在[0,1]之间")
+        top_p = self.input_params_for_body.get('top_p', None)
+        if not top_p or not (0 <= top_p <= 1):
+            raise Exception("多样性参数错误，应该在[0,1]之间")
+        repetition_penalty = self.input_params_for_body.get('repetition_penalty', None)
+        if not repetition_penalty or not (1 <= repetition_penalty <= 10):
+            raise Exception("重复惩罚参数错误，应该在[1,10]之间")
+
+        if 'headers' not in params_dict['settings']:
+            raise Exception("headers key not found in settings")
+        # prompt提示词拼接
+        self.generate_prompt(*args, **kwargs)
+        # 2. 使用 api_request 函数进行 API 请求设置
+        response = api_request_for_big_model(url=self.api_url, method='POST', headers=self.api_header,
+                                             data=self.input_params_for_body)
+        if response.status == service_status.ServiceExecStatus.ERROR:
+            raise Exception(str(response.content))
+        if response.content is None:
+            raise Exception("Can not get response from selected model")
+        # 3. 拆包解析
+        self.output_params = LLMNode.convert_llm_response(response.content)
+        # 检查返回值是否对应
+        for k in self.output_params_spec:
+            if k not in self.output_params:
+                logger.error(f"api response: {self.output_params}")
+                raise Exception(f"user defined output parameter {k} not found in api response")
+
+        params_pool[self.node_id] |= self.output_params
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return self.output_params
+
+    def generate_prompt(self, *args, **kwargs):
+        messages = self.input_params_for_body["messages"]
+        try:
+            updated_messages = messages.format(**self.input_params_for_body)
+            # 将入参补全为模型可识别形式
+            self.input_params_for_body["messages"] = [{'role': 'user', 'content': updated_messages}]
+        except KeyError as e:
+            error_message = f"Missing key for formatting: {e}"
+            raise ValueError(error_message)
+        return self.input_params_for_body
+
+    @staticmethod
+    def convert_llm_request(origin_params_dict: dict) -> dict:
+        # 将name为Input替换为LLM识别的messages
+        for item in origin_params_dict['inputs']:
+            if item['name'] == 'input':
+                item['name'] = 'messages'
+        # 替换model字段为对应model的url
+        # TODO 支持多个模型后，需要提取函数进行配置每个模型
+        if origin_params_dict['settings']['model'] == 'unicom-70b-chat':
+            origin_params_dict['settings'].pop('model')
+
+            origin_params_dict['settings']['url'] = 'http://192.168.2.180:8152/v1/chat/completions'
+        else:
+            raise Exception(f"{origin_params_dict['settings']['model']} is not supported")
+        return origin_params_dict
+
+    @staticmethod
+    def convert_llm_response(origin_params_dict: dict) -> dict:
+        content = origin_params_dict['data']['choices'][0]['message']['content']
+        updated_params_dict = {'content': content}
+        return updated_params_dict
+
+
 NODE_NAME_MAPPING = {
     "dashscope_chat": ModelNode,
     "openai_chat": ModelNode,
@@ -1883,6 +2074,7 @@ NODE_NAME_MAPPING = {
     "EndNode": EndNode,
     "PythonNode": PythonServiceUserTypingNode,
     "ApiNode": ApiNode,
+    "LLMNode": LLMNode,
 }
 
 
