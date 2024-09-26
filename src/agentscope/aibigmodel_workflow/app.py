@@ -38,7 +38,6 @@ app = Flask(__name__)
 
 # 设置时区为东八区
 os.environ['TZ'] = 'Asia/Shanghai'
-time.tzset()
 
 # 读取 YAML 文件
 test_without_mysql = False
@@ -194,7 +193,8 @@ def plugin_publish() -> Response:
         "pluginENName": workflow_result.config_en_name,
         "pluginField": pluginField,
         "pluginDescription": description,
-        "pluginSpec": dag_content
+        "pluginSpec": dag_content,
+        "userID": user_id
     }
 
     # 数据库存储
@@ -260,8 +260,8 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
 
 
 # 已经发布的workflow直接运行
-@app.route("/plugin/api/run_for_bigmodel/<plugin_en_name>", methods=["POST"])
-def plugin_run_for_bigmodel(plugin_en_name) -> Response:
+@app.route("/plugin/api/run_for_bigmodel/<user_id>/<plugin_en_name>", methods=["POST"])
+def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
     """
     Input query data and get response.
     """
@@ -274,7 +274,7 @@ def plugin_run_for_bigmodel(plugin_en_name) -> Response:
         return jsonify({"code": 7, "msg": f"input param type is {type(input_params)}, not dict"})
     logger.info(f"=== AI request: {input_params=}")
 
-    plugin = _PluginTable.query.filter_by(plugin_en_name=plugin_en_name).first()
+    plugin = _PluginTable.query.filter_by(user_id=user_id, plugin_en_name=plugin_en_name).first()
     if not plugin:
         return jsonify({"code": 7, "msg": "plugin not exists"})
 
