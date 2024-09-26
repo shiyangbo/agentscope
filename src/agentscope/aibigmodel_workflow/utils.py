@@ -170,7 +170,7 @@ def plugin_desc_config_generator(data: dict) -> dict:
     }}
 
     # 完善入参列表
-    request_schema = openapi_schema_dict["paths"][f"/run_for_bigmodel/{dag_en_name}"]["post"]["requestBody"][
+    request_schema = openapi_schema_dict["paths"][f"/run_for_bigmodel/{user_id}/{dag_en_name}"]["post"]["requestBody"][
         "content"]["application/json"]["schema"]
 
     start_node_dict = {}
