@@ -31,6 +31,7 @@ from loguru import logger
 import agentscope.aibigmodel_workflow.utils as utils
 from agentscope.web.workstation.workflow_dag import build_dag
 from agentscope.utils.jwt_auth import parse_jwt_with_claims
+from agentscope.utils.tools import _is_windows
 
 from flask import Flask, request, jsonify, g
 
@@ -38,6 +39,8 @@ app = Flask(__name__)
 
 # 设置时区为东八区
 os.environ['TZ'] = 'Asia/Shanghai'
+if not _is_windows():
+    time.tzset()
 
 # 读取 YAML 文件
 test_without_mysql = False
@@ -50,7 +53,7 @@ if test_without_mysql:
     os.makedirs(str(_cache_dir), exist_ok=True)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{str(_cache_db)}"
 else:
-    with open('/agentscope/agentscope/src/agentscope/aibigmodel_workflow/sql_config.yaml', 'r') as file:
+    with open('sql_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
 
     # 从 YAML 文件中提取参数
@@ -386,6 +389,8 @@ def workflow_run() -> Response:
 
     workflow_schema = request.json.get("workflowSchema")
     workflow_id = request.json.get("workflowID")
+    if workflow_id == "":
+        return jsonify({"code": 7, "msg": f"workflowID is Null"})
     user_id = g.claims.get("user_id")
     logger.info(f"workflow_schema: {workflow_schema}")
 
