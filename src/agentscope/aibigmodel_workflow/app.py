@@ -197,7 +197,8 @@ def plugin_publish() -> Response:
         "pluginField": pluginField,
         "pluginDescription": description,
         "pluginSpec": dag_content,
-        "userID": user_id
+        "userID": user_id,
+        "serviceURL": SERVICE_URL
     }
 
     # 数据库存储

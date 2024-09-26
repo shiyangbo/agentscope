@@ -95,6 +95,7 @@ def standardize_single_node_format(data: dict) -> dict:
 def plugin_desc_config_generator(data: dict) -> dict:
     dag_name = data['pluginName']
     user_id = data['userID']
+    service_url = data['serviceURL']
     if user_id == '':
         raise Exception("userID not found")
     dag_en_name = data['pluginENName']
@@ -112,7 +113,7 @@ def plugin_desc_config_generator(data: dict) -> dict:
         "description": f"{dag_desc}"
     }, "servers": [
         {
-            "url": "http://106.74.31.170:5003/plugin/api"
+            "url": service_url
         }
     ], "paths": {
         f"/run_for_bigmodel/{user_id}/{dag_en_name}": {
