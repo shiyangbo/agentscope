@@ -265,22 +265,22 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
 
 # 已经发布的workflow直接运行
 @app.route("/plugin/api/run_for_bigmodel/<user_id>/<plugin_en_name>", methods=["POST"])
-def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
+def plugin_run_for_bigmodel(user_id, plugin_en_name) -> str:
     """
     Input query data and get response.
     """
     if plugin_en_name == "":
-        return jsonify({"code": 7, "msg": "plugin_en_name empty"})
+        return json.dumps({"code": 7, "msg": "plugin_en_name empty"})
 
     # 大模型的入参适配
     input_params = request.json
     if not isinstance(input_params, dict):
-        return jsonify({"code": 7, "msg": f"input param type is {type(input_params)}, not dict"})
+        return json.dumps({"code": 7, "msg": f"input param type is {type(input_params)}, not dict"})
     logger.info(f"=== AI request: {input_params=}")
 
     plugin = _PluginTable.query.filter_by(user_id=user_id, plugin_en_name=plugin_en_name).first()
     if not plugin:
-        return jsonify({"code": 7, "msg": "plugin not exists"})
+        return json.dumps({"code": 7, "msg": "plugin not exists"})
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
@@ -289,7 +289,7 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
         dag = build_dag(converted_config)
     except Exception as e:
         logger.error(f"plugin_run_for_bigmodel failed: {repr(e)}")
-        return jsonify({"code": 7, "msg": repr(e)})
+        return json.dumps({"code": 7, "msg": repr(e)})
 
     # 调用运行dag
     start_time = time.time()
@@ -299,7 +299,7 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
         node_status = node_dict['node_status']
         if node_status == 'failed':
             node_message = node_dict['node_message']
-            return jsonify({"code": 7, "msg": node_message})
+            return json.dumps({"code": 7, "msg": node_message})
 
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
@@ -307,11 +307,11 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
     execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
     execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
-        return jsonify({"code": 7, "msg": "execute result not exists"})
+        return json.dumps({"code": 7, "msg": "execute result not exists"})
 
     # 大模型调用时，不需要增加数据库流水记录
     logger.info(f"=== AI request: {plugin_en_name=}, result: {result}, execute_result: {execute_result}")
-    return result
+    return json.dumps(result, ensure_ascii=False)
 
 
 @app.route("/node/run_api", methods=["POST"])
