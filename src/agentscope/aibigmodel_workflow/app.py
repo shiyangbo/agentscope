@@ -312,9 +312,7 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
 
     # 大模型调用时，不需要增加数据库流水记录
     logger.info(f"=== AI request: {plugin_en_name=}, result: {result}, execute_result: {execute_result}")
-    result_json = json.dumps(result, ensure_ascii=False)
-    result_new = json.loads(result_json)
-    return result_new
+    return result
 
 
 @app.route("/node/run_api", methods=["POST"])
