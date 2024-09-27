@@ -36,6 +36,7 @@ from agentscope.utils.tools import _is_windows
 from flask import Flask, request, jsonify, g
 
 app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False
 
 # 设置时区为东八区
 os.environ['TZ'] = 'Asia/Shanghai'
@@ -310,8 +311,8 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> Response:
         return jsonify({"code": 7, "msg": "execute result not exists"})
 
     # 大模型调用时，不需要增加数据库流水记录
-    logger.info(f"=== AI request: {plugin_en_name=}, execute_result: {execute_result}")
-    return result
+    logger.info(f"=== AI request: {plugin_en_name=}, result: {result}, execute_result: {execute_result}")
+    return jsonify(result)
 
 
 @app.route("/node/run_api", methods=["POST"])
