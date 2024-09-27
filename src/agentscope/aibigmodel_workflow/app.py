@@ -36,7 +36,6 @@ from agentscope.utils.tools import _is_windows
 from flask import Flask, request, jsonify, g
 
 app = Flask(__name__)
-app.config['JSON_AS_ASCII'] = False
 
 # 设置时区为东八区
 os.environ['TZ'] = 'Asia/Shanghai'
