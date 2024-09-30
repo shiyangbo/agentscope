@@ -1977,13 +1977,13 @@ class LLMNode(WorkflowNode):
 
         # 大模型参数校验
         temperature = self.input_params_for_body.get('temperature', None)
-        if not temperature or not (0 <= temperature <= 1):
+        if not (0 <= temperature <= 1):
             raise Exception("温度参数错误，应该在[0,1]之间")
         top_p = self.input_params_for_body.get('top_p', None)
-        if not top_p or not (0 <= top_p <= 1):
+        if not (0 <= top_p <= 1):
             raise Exception("多样性参数错误，应该在[0,1]之间")
         repetition_penalty = self.input_params_for_body.get('repetition_penalty', None)
-        if not repetition_penalty or not (1 <= repetition_penalty <= 10):
+        if not (1 <= repetition_penalty <= 10):
             raise Exception("重复惩罚参数错误，应该在[1,10]之间")
 
         if 'headers' not in params_dict['settings']:
