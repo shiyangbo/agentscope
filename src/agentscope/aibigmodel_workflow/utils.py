@@ -1,5 +1,9 @@
 import uuid
 import json
+import re
+
+from pypinyin import lazy_pinyin
+
 
 class WorkflowStatus:  # type: ignore[name-defined]
     WORKFLOW_PUBLISHED = "published",  # 已发布状态
@@ -258,3 +262,27 @@ def generate_workflow_schema_template() -> str:
     }
     workflow_schema_json = json.dumps(workflow_schema)
     return workflow_schema_json
+
+
+# 插件中文名称自动转换拼音
+def chinese_to_pinyin(input_str: str) -> str:
+    pinyin_list = lazy_pinyin(input_str)
+    # 字符串中中文拼音首字母大写，其他情况保留原格式
+    if input_str.isascii():
+        capitalize_pinyin_list = [item.upper() if item.isalpha() else item for item in pinyin_list]
+    else:
+        capitalize_pinyin_list = [item.capitalize() if item.isalpha() else item for item in pinyin_list]
+    pinyin_str = ''.join(capitalize_pinyin_list)
+    return pinyin_str
+
+
+# 插件复制后缀添加
+def add_max_suffix(config_name: str, existing_config_copies: dict) -> int:
+    existing_suffixes = []
+    for config_copy in existing_config_copies:
+        match = re.match(rf"{re.escape(config_name)}_(\d+)", config_copy.config_en_name)
+        if match:
+            existing_suffixes.append(int(match.group(1)))
+    # 找出最大后缀
+    name_suffix = max(existing_suffixes, default=0) + 1
+    return name_suffix
