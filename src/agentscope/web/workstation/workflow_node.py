@@ -1983,9 +1983,11 @@ class LLMNode(WorkflowNode):
         if not (0 <= top_p <= 1):
             raise Exception("多样性参数错误，应该在[0,1]之间")
         repetition_penalty = self.input_params_for_body.get('repetition_penalty', None)
-        if not (1 <= repetition_penalty <= 10):
-            raise Exception("重复惩罚参数错误，应该在[1,10]之间")
-
+        if not (1 <= repetition_penalty <= 1.3):
+            raise Exception("重复惩罚参数错误，应该在[1,1.3]之间")
+        messages = self.input_params_for_body.get('messages', None)
+        if not messages:
+            raise Exception("大模型节点提示词为空,请填写提示词")
         if 'headers' not in params_dict['settings']:
             raise Exception("headers key not found in settings")
         # prompt提示词拼接
