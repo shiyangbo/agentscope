@@ -2,7 +2,6 @@
 """The Web Server of the AgentScope Studio."""
 import json
 import os
-import re
 import time
 import sys
 from functools import wraps
@@ -447,7 +446,6 @@ def workflow_run() -> Response:
     return jsonify(code=0, data=result, executeID=dag.uuid)
 
 
-# TODO, 创建接口后续需要增加根据入参模板不同，自动创建模板json，存储到dag_content中
 @app.route("/workflow/create", methods=["POST"])
 def workflow_create() -> Response:
     # request 参数获取
@@ -457,43 +455,66 @@ def workflow_create() -> Response:
     config_desc = data.get("configDesc")
     if ' ' in config_en_name:
         return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
-    if not config_name or not config_en_name or not config_desc:
-        return jsonify({"code": 7, "msg": "configName,configENName,configDesc is required"})
+    if not config_name or not config_desc:
+        return jsonify({"code": 7, "msg": "configName,configDesc is required"})
     user_id = g.claims.get("user_id")
-    # 查询表中同一用户下是否有重复config_en_name的记录
-    workflow_results = _WorkflowTable.query.filter(
-        _WorkflowTable.user_id == user_id,
-        _WorkflowTable.config_en_name == config_en_name
-    ).all()
-    if not workflow_results:
-        try:
-            dag_content = utils.generate_workflow_schema_template()
-            workflow_id = uuid.uuid4()
-            db.session.add(
-                _WorkflowTable(
-                    id=str(workflow_id),
-                    user_id=user_id,
-                    config_name=config_name,
-                    config_en_name=config_en_name,
-                    config_desc=config_desc,
-                    status=utils.WorkflowStatus.WORKFLOW_DRAFT,
-                    updated_time=datetime.now(),
-                    dag_content=dag_content
-                ),
-            )
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            return jsonify({"code": 7, "msg": str(e)})
-        data = {
-            "workflowID": str(workflow_id),
-            "configName": config_name,
-            "configENName": config_en_name,
-            "configDesc": config_desc
-        }
-        return jsonify({"code": 0, "data": data, "msg": "Workflow file created successfully"})
+    # 用户未输入英文名称，则自动生成，用户输入英文名称，则保存用户输入
+    if config_en_name == "":
+        config_en_name = utils.chinese_to_pinyin(config_name)
+        workflow_results = _WorkflowTable.query.filter(
+            _WorkflowTable.config_en_name.like(f"{config_en_name}%"),
+            _WorkflowTable.user_id == user_id
+        ).all()
+        # 查询表中同一用户下是否有重复config_en_name的记录
+        if not workflow_results:
+            response = create_new_workflow(user_id, config_name, config_en_name, config_desc)
+        else:
+            name_suffix = utils.add_max_suffix(config_en_name, workflow_results)
+            # 生成新的配置名称
+            new_config_en_name = f"{config_en_name}_{name_suffix}"
+            response = create_new_workflow(user_id, config_name, new_config_en_name, config_desc)
+        return response
     else:
-        return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
+        workflow_results = _WorkflowTable.query.filter(
+            _WorkflowTable.user_id == user_id,
+            _WorkflowTable.config_en_name == config_en_name
+        ).all()
+        # 查询表中同一用户下是否有重复config_en_name的记录
+        if not workflow_results:
+            response = create_new_workflow(user_id, config_name, config_en_name, config_desc)
+            return response
+        else:
+            return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
+
+
+def create_new_workflow(user_id: str, config_name: str, config_en_name: str, config_desc: str) -> Response:
+    dag_content = utils.generate_workflow_schema_template()
+    workflow_id = uuid.uuid4()
+    try:
+        db.session.add(
+            _WorkflowTable(
+                id=str(workflow_id),
+                user_id=user_id,
+                config_name=config_name,
+                config_en_name=config_en_name,
+                config_desc=config_desc,
+                status=utils.WorkflowStatus.WORKFLOW_DRAFT,
+                updated_time=datetime.now(),
+                dag_content=dag_content
+            ),
+        )
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"code": 7, "msg": str(e)})
+
+    data = {
+        "workflowID": str(workflow_id),
+        "configName": config_name,
+        "configENName": config_en_name,
+        "configDesc": config_desc
+    }
+    return jsonify({"code": 0, "data": data, "msg": "Workflow file created successfully"})
 
 
 @app.route("/workflow/delete", methods=["DELETE"])
@@ -596,14 +617,8 @@ def workflow_clone() -> Response:
         _WorkflowTable.user_id == user_id
     ).all()
 
-    # 计算新的名称后缀，找出最大后缀
-    existing_suffixes = []
-    for config_copy in existing_config_copies:
-        match = re.match(rf"{re.escape(workflow_config.config_en_name)}_(\d+)", config_copy.config_en_name)
-        if match:
-            existing_suffixes.append(int(match.group(1)))
     # 找出最大后缀
-    name_suffix = max(existing_suffixes, default=0) + 1
+    name_suffix = utils.add_max_suffix(workflow_config.config_en_name, existing_config_copies)
     # 生成新的配置名称和状态
     new_config_name = f"{workflow_config.config_name}_副本{name_suffix}"
     new_config_en_name = f"{workflow_config.config_en_name}_{name_suffix}"

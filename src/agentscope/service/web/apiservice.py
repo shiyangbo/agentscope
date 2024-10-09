@@ -125,7 +125,7 @@ def api_request_for_big_model(
             data=j.dumps(data),
             json=json,
             headers=headers,
-            timeout=60,
+            timeout=90,
             verify=False,
             stream=False,
             **kwargs,
