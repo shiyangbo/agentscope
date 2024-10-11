@@ -9,6 +9,9 @@ from typing import List, Optional
 from loguru import logger
 from typing import Any
 
+from concurrent.futures import ThreadPoolExecutor
+from concurrent import futures
+
 import agentscope
 from agentscope import msghub
 from agentscope.agents import (
@@ -113,6 +116,7 @@ class ASDiGraph(nx.DiGraph):
         kwargs.setdefault('uuid', None)
         self.uuid = kwargs['uuid']
         self.params_pool = {}
+        self.output_values = []
 
     def generate_node_param_real(self, param_spec: dict) -> dict:
         param_name = param_spec['name']
@@ -237,30 +241,36 @@ class ASDiGraph(nx.DiGraph):
             if node_id not in self.nodes_not_in_graph
         ]
         logger.info(f"topological sorted nodes: {sorted_nodes}")
+        sorted_nodes_successors = self.get_nodes_with_successors(sorted_nodes)
 
         total_input_values, total_output_values, total_status_values, total_message_values = {}, {}, {}, {}
-        output_values = {}
-        # Run with predecessors outputs
+
+        # 使用多线程执行sorted_nodes
+        node_output_value = {}
+        with ThreadPoolExecutor() as executor:
+            for node_id, successors in sorted_nodes_successors:
+                if not self.output_values:
+                    future_to_node = {
+                        executor.submit(self.exec_node, node_id, input_param): (node_id, successors)
+                    }
+                else:
+                    all_predecessor_node_output_params = {}
+                    for i, predecessor_node_output_params in enumerate(self.output_values):
+                        all_predecessor_node_output_params |= predecessor_node_output_params
+                    future_to_node = {
+                        executor.submit(self.exec_node, node_id, all_predecessor_node_output_params): (node_id, successors)
+                    }
+                for future in futures.as_completed(future_to_node):
+                    node_id, successors = future_to_node[future]
+                    try:
+                        node_output_value[node_id] = future.result()
+                    except Exception as e:
+                        logger.error(f"Error running node {node_id}: {e}")
+
+                    # 更新后继节点的输入参数
+                    self.output_values.append(node_output_value[node_id])
+
         for node_id in sorted_nodes:
-            inputs = [
-                output_values[predecessor]
-                for predecessor in self.predecessors(node_id)
-            ]
-
-            if len(inputs) == 0:
-                # 开始节点
-                output_values[node_id] = self.exec_node(node_id, input_param)
-            elif len(inputs) == 1:
-                output_values[node_id] = self.exec_node(node_id, inputs[0])
-            elif len(inputs) > 1:
-                # 关键路径对应节点
-                all_predecessor_node_output_params = {}
-                for i, predecessor_node_output_params in enumerate(inputs):
-                    all_predecessor_node_output_params |= predecessor_node_output_params
-                output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
-            else:
-                raise ValueError("unknown condition")
-
             # 保存各个节点的信息
             total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
             total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
@@ -273,6 +283,16 @@ class ASDiGraph(nx.DiGraph):
             nodes_result, total_output_values, total_input_values, total_status_values, total_message_values)
         logger.info(f"workflow total running result: {updated_nodes_result}")
         return total_input_values[sorted_nodes[-1]], updated_nodes_result
+
+    def get_nodes_with_successors(self, sorted_nodes):
+        nodes_with_successors = []
+        for node_id in sorted_nodes:
+            successors = list(self.successors(node_id))
+            if successors:
+                nodes_with_successors.append((node_id, successors))
+            else:
+                nodes_with_successors.append((node_id, None))
+        return nodes_with_successors
 
     def compile(  # type: ignore[no-untyped-def]
             self,
