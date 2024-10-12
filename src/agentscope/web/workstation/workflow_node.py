@@ -217,7 +217,7 @@ class ASDiGraph(nx.DiGraph):
             logger.info(f"inputs: {inputs}")
             print("len(inputs): ", len(inputs))
             if not inputs:
-                values[node_id] = self.exec_node(node_id)
+                values[node_id] = self.exec_node(node_id, None)
             elif len(inputs):
                 # Note: only support exec with the first predecessor now
                 values[node_id] = self.exec_node(node_id, inputs[0])
@@ -286,7 +286,7 @@ class ASDiGraph(nx.DiGraph):
                 # 运行节点，并保存输出参数
                 with ThreadPoolExecutor() as executor:
                     res = executor.map(self.exec_node, node_and_inputparams)
-                    for index, result in enumerate(list(res)):
+                    for index, result in enumerate(res):
                         node_id = node_and_inputparams[index][0]
                         output_values[node_id] = result
                 continue
@@ -447,7 +447,7 @@ class ASDiGraph(nx.DiGraph):
             self.inits.append(compile_dict["inits"])
         return node_opt
 
-    def exec_node(self, node_id: str, x_in: Any = None) -> Any:
+    def exec_node(self, node_id: str, x_in: Any) -> Any:
         """
         Execute the computation associated with a given node in the graph.
 
