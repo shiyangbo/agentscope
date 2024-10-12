@@ -270,7 +270,7 @@ class ASDiGraph(nx.DiGraph):
 
             # 并发运行
             if len(nodes_each_generation) > 1:
-                node_and_inputparams = []
+                node_and_inputparams = [[], []]
                 for node_id in nodes_each_generation:
                     inputs = [
                         copy.deepcopy(output_values[predecessor])
@@ -281,7 +281,8 @@ class ASDiGraph(nx.DiGraph):
                     for i, predecessor_node_output_params in enumerate(inputs):
                         all_predecessor_node_output_params |= predecessor_node_output_params
                     # 注意到这里一定不是开始节点，所以省略 all_predecessor_node_output_params = input_param
-                    node_and_inputparams.append((node_id, all_predecessor_node_output_params))
+                    node_and_inputparams[0].append(node_id)
+                    node_and_inputparams[1].append(all_predecessor_node_output_params)
 
                 # 运行节点，并保存输出参数
                 with ThreadPoolExecutor() as executor:
