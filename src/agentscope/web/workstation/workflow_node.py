@@ -10,7 +10,6 @@ from typing import List, Optional
 from loguru import logger
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
-from concurrent import futures
 
 import agentscope
 from agentscope import msghub
@@ -286,7 +285,7 @@ class ASDiGraph(nx.DiGraph):
 
                 # 运行节点，并保存输出参数
                 with ThreadPoolExecutor() as executor:
-                    res = executor.map(self.exec_node, node_and_inputparams)
+                    res = executor.map(self.exec_node, node_and_inputparams[0], node_and_inputparams[1])
                     for index, result in enumerate(res):
                         node_id = node_and_inputparams[index][0]
                         output_values[node_id] = result
