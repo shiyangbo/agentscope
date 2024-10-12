@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Workflow node opt."""
 import base64
+import copy
 import json
 import traceback
 from abc import ABC, abstractmethod
@@ -8,6 +9,8 @@ from enum import IntEnum
 from typing import List, Optional
 from loguru import logger
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from concurrent import futures
 
 import agentscope
 from agentscope import msghub
@@ -230,49 +233,83 @@ class ASDiGraph(nx.DiGraph):
         the outputs from its predecessors as inputs.
         """
         agentscope.init(logger_level="DEBUG")
-        sorted_nodes = list(nx.topological_sort(self))
-        sorted_nodes = [
-            node_id
-            for node_id in sorted_nodes
-            if node_id not in self.nodes_not_in_graph
-        ]
-        logger.info(f"topological sorted nodes: {sorted_nodes}")
+
+        # 注释掉原来的代码，
+        # 原因是，能并行的节点，尽量多线程并发运行，所以这里使用产出的二维数组来生成运行序列结果，参见 topological_generations文档
+        #
+        # sorted_nodes = list(nx.topological_sort(self))
+        # sorted_nodes = [
+        #     node_id
+        #     for node_id in sorted_nodes
+        #     if node_id not in self.nodes_not_in_graph
+        # ]
+        sorted_nodes_generations = list(nx.topological_generations(self))
+        logger.info(f"topological generation sorted nodes: {sorted_nodes_generations}")
 
         total_input_values, total_output_values, total_status_values, total_message_values = {}, {}, {}, {}
         output_values = {}
         # Run with predecessors outputs
-        for node_id in sorted_nodes:
-            inputs = [
-                output_values[predecessor]
-                for predecessor in self.predecessors(node_id)
-            ]
+        for nodes_each_generation in sorted_nodes_generations:
+            # 串行运行
+            if len(nodes_each_generation) == 1:
+                for node_id in nodes_each_generation:
+                    inputs = [
+                        copy.deepcopy(output_values[predecessor])
+                        for predecessor in self.predecessors(node_id)
+                    ]
 
-            if len(inputs) == 0:
-                # 开始节点
-                output_values[node_id] = self.exec_node(node_id, input_param)
-            elif len(inputs) == 1:
-                output_values[node_id] = self.exec_node(node_id, inputs[0])
-            elif len(inputs) > 1:
-                # 关键路径对应节点
-                all_predecessor_node_output_params = {}
-                for i, predecessor_node_output_params in enumerate(inputs):
-                    all_predecessor_node_output_params |= predecessor_node_output_params
-                output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
-            else:
-                raise ValueError("unknown condition")
+                    # 运行节点，并保存输出参数
+                    all_predecessor_node_output_params = {}
+                    for i, predecessor_node_output_params in enumerate(inputs):
+                        all_predecessor_node_output_params |= predecessor_node_output_params
+                    # 特殊情况：注意开始节点
+                    if len(all_predecessor_node_output_params) == 0:
+                        all_predecessor_node_output_params = input_param
+                    output_values[node_id] = self.exec_node(node_id, all_predecessor_node_output_params)
+                continue
 
-            # 保存各个节点的信息
-            total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
-            total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
-            total_status_values[node_id] = self.nodes[node_id]["opt"].running_status
-            total_message_values[node_id] = self.nodes[node_id]["opt"].running_message
+            # 并发运行
+            if len(nodes_each_generation) > 1:
+                node_and_inputparams = []
+                for node_id in nodes_each_generation:
+                    inputs = [
+                        copy.deepcopy(output_values[predecessor])
+                        for predecessor in self.predecessors(node_id)
+                    ]
+
+                    all_predecessor_node_output_params = {}
+                    for i, predecessor_node_output_params in enumerate(inputs):
+                        all_predecessor_node_output_params |= predecessor_node_output_params
+                    # 注意到这里一定不是开始节点，所以省略 all_predecessor_node_output_params = input_param
+                    node_and_inputparams.append((node_id, all_predecessor_node_output_params))
+
+                # 运行节点，并保存输出参数
+                with ThreadPoolExecutor() as executor:
+                    res = executor.map(self.exec_node, node_and_inputparams)
+                    for index, result in enumerate(list(res)):
+                        node_id = node_and_inputparams[index][0]
+                        output_values[node_id] = result
+                continue
+
+            # 异常代码区
+            raise Exception("dag图拓扑排序失败！")
+
+        end_node_id = -1
+        for nodes_each_generation in sorted_nodes_generations:
+            for node_id in nodes_each_generation:
+                # 保存各个节点的信息
+                total_input_values[node_id] = self.nodes[node_id]["opt"].input_params
+                total_output_values[node_id] = self.nodes[node_id]["opt"].output_params
+                total_status_values[node_id] = self.nodes[node_id]["opt"].running_status
+                total_message_values[node_id] = self.nodes[node_id]["opt"].running_message
+                end_node_id = node_id
 
         # 初始化节点运行结果并更新
         nodes_result = ASDiGraph.set_initial_nodes_result(config)
         updated_nodes_result = ASDiGraph.update_nodes_with_values(
             nodes_result, total_output_values, total_input_values, total_status_values, total_message_values)
         logger.info(f"workflow total running result: {updated_nodes_result}")
-        return total_input_values[sorted_nodes[-1]], updated_nodes_result
+        return total_input_values[end_node_id], updated_nodes_result
 
     def compile(  # type: ignore[no-untyped-def]
             self,
