@@ -287,7 +287,7 @@ class ASDiGraph(nx.DiGraph):
                 with ThreadPoolExecutor() as executor:
                     res = executor.map(self.exec_node, node_and_inputparams[0], node_and_inputparams[1])
                     for index, result in enumerate(res):
-                        node_id = node_and_inputparams[index][0]
+                        node_id = node_and_inputparams[0][index]
                         output_values[node_id] = result
                 continue
 
