@@ -29,6 +29,7 @@ from loguru import logger
 
 import agentscope.aibigmodel_workflow.utils as utils
 from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.utils.jwt_auth import parse_jwt_with_claims
 from agentscope.utils.tools import _is_windows
 
@@ -185,7 +186,7 @@ def plugin_publish() -> Response:
     if not workflow_result:
         return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
-    if workflow_result.execute_status != "success":
+    if workflow_result.execute_status != WorkflowNodeStatus.SUCCESS:
         return jsonify({"code": 7, "msg": "Workflow did not run successfully, unable to publish"})
     # 插件描述信息生成，对接智能体格式
     dag_content = json.loads(workflow_result.dag_content)
@@ -296,14 +297,16 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> str:
     # 检查是否如期运行
     for node_dict in nodes_result:
         node_status = node_dict['node_status']
-        if node_status == 'failed':
+        if node_status == WorkflowNodeStatus.FAILED:
             node_message = node_dict['node_message']
             return json.dumps({"code": 7, "msg": node_message})
 
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
-    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_status = WorkflowNodeStatus.SUCCESS if all(
+        node.get('node_status') in [WorkflowNodeStatus.SUCCESS, WorkflowNodeStatus.RUNNING_SKIP]
+        for node in nodes_result) else WorkflowNodeStatus.FAILED
     execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
         return json.dumps({"code": 7, "msg": "execute result not exists"})
@@ -339,7 +342,7 @@ def node_run_api() -> Response:
     result, nodes_result = dag.run_with_param(content, nodes)
     if len(nodes_result) != 1:
         return jsonify({"code": 7, "msg": nodes_result})
-    if nodes_result[0]["node_status"] != 'success':
+    if nodes_result[0]["node_status"] != WorkflowNodeStatus.SUCCESS:
         return jsonify({"code": 7, "msg": nodes_result[0]["node_message"]})
 
     return jsonify(code=0, data=nodes_result[0]["outputs"])
@@ -370,7 +373,7 @@ def node_run_python() -> Response:
     result, nodes_result = dag.run_with_param(content, node_schema)
     if len(nodes_result) != 1:
         return jsonify({"code": 7, "msg": nodes_result})
-    if nodes_result[0]["node_status"] != 'success':
+    if nodes_result[0]["node_status"] != WorkflowNodeStatus.SUCCESS:
         return jsonify({"code": 7, "msg": nodes_result[0]["node_message"]})
 
     return jsonify(code=0, data=nodes_result[0]["outputs"])
@@ -408,7 +411,9 @@ def workflow_run() -> Response:
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
-    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_status = WorkflowNodeStatus.SUCCESS if all(
+        node.get('node_status') in [WorkflowNodeStatus.SUCCESS, WorkflowNodeStatus.RUNNING_SKIP]
+        for node in nodes_result) else WorkflowNodeStatus.FAILED
     execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     # 需要持久化
     logger.info(f"execute_result: {execute_result}")
