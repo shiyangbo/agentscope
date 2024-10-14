@@ -146,6 +146,19 @@ class ASDiGraph(nx.DiGraph):
 
         return query_param_result, json_body_param_result
 
+    def init_params_pool_with_running_node(self, node_id: str):
+        # 注意到多个节点并发运行时，字典params_pool是共享变量，
+        # 但是由于GIL的机制天然保证了多线程之间的串行运行顺序，以及每个节点只操作字典params_pool的各自不同key，这里简单起见，可以不加锁
+        # TODO 加 threading lock
+        self.params_pool.setdefault(node_id, {})
+        return
+
+    def update_params_pool_with_running_node(self, node_id: str, node_output_params: dict):
+        # 注意到多个节点并发运行时，字典params_pool是共享变量，
+        # 但是由于GIL的机制天然保证了多线程之间的串行运行顺序，以及每个节点只操作字典params_pool的各自不同key，这里简单起见，可以不加锁
+        # TODO 加 threading lock
+        self.params_pool[node_id] |= node_output_params
+
     @staticmethod
     def generate_node_param_spec(param_spec: dict) -> dict:
         param_name = param_spec['name']
@@ -1322,8 +1335,7 @@ class StartNode(WorkflowNode):
             raise Exception("input param dict kwargs empty")
 
         # 1. 建立参数映射
-        params_pool = self.dag_obj.params_pool
-        params_pool.setdefault(self.node_id, {})
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
 
         params_dict = self.opt_kwargs
         for i, param_spec in enumerate(params_dict['outputs']):
@@ -1357,7 +1369,7 @@ class StartNode(WorkflowNode):
                 continue
             self.output_params[k] = v
 
-        params_pool[self.node_id] |= self.output_params
+        self.dag_obj.update_params_pool_with_running_node(self.node_id, self.output_params)
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1439,8 +1451,7 @@ class EndNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        params_pool = self.dag_obj.params_pool
-        params_pool.setdefault(self.node_id, {})
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1555,8 +1566,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        params_pool = self.dag_obj.params_pool
-        params_pool.setdefault(self.node_id, {})
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1611,7 +1621,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
                 raise Exception(f"user defined output parameter '{k}' not found in 'output_params' code return value:"
                                 f"{self.output_params}")
 
-        params_pool[self.node_id] |= self.output_params
+        self.dag_obj.update_params_pool_with_running_node(self.node_id, self.output_params)
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1824,8 +1834,7 @@ class ApiNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        params_pool = self.dag_obj.params_pool
-        params_pool.setdefault(self.node_id, {})
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -1888,7 +1897,7 @@ class ApiNode(WorkflowNode):
                 logger.error(f"api response: {self.output_params}")
                 raise Exception(f"user defined output parameter {k} not found in api response")
 
-        params_pool[self.node_id] |= self.output_params
+        self.dag_obj.update_params_pool_with_running_node(self.node_id, self.output_params)
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
@@ -1992,8 +2001,7 @@ class LLMNode(WorkflowNode):
             return {}
 
     def run(self, *args, **kwargs):
-        params_pool = self.dag_obj.params_pool
-        params_pool.setdefault(self.node_id, {})
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
 
         # 1. 建立参数映射
         params_dict = self.opt_kwargs
@@ -2044,7 +2052,7 @@ class LLMNode(WorkflowNode):
                 logger.error(f"api response: {self.output_params}")
                 raise Exception(f"user defined output parameter {k} not found in api response")
 
-        params_pool[self.node_id] |= self.output_params
+        self.dag_obj.update_params_pool_with_running_node(self.node_id, self.output_params)
         logger.info(
             f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
         return self.output_params
