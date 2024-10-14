@@ -115,6 +115,9 @@ class ASDiGraph(nx.DiGraph):
         kwargs.setdefault('uuid', None)
         self.uuid = kwargs['uuid']
         self.params_pool = {}
+        self.conditions_pool = {}
+        self.conditions_priority_pool = {}
+        self.success_branch = -1
 
     def generate_node_param_real(self, param_spec: dict) -> dict:
         param_name = param_spec['name']
@@ -122,10 +125,176 @@ class ASDiGraph(nx.DiGraph):
         if self.params_pool and param_spec['value']['type'] == 'ref':
             reference_node_name = param_spec['value']['content']['ref_node_id']
             reference_param_name = param_spec['value']['content']['ref_var_name']
+            if self.nodes[reference_node_name]["opt"].running_status == WorkflowNodeStatus.RUNNING_SKIP:
+                return {param_name: None}
             param_value = self.params_pool[reference_node_name][reference_param_name]
             return {param_name: param_value}
 
         return {param_name: param_spec['value']['content']}
+
+    def generate_node_param_real_for_switch_input(self, param_spec: dict) -> dict:
+        for condition in param_spec['conditions']:
+            if not condition['left'] and not condition['right']:
+                raise Exception("Switch node format invalid")
+            if condition['left']['value']['type'] == 'ref':
+                reference_node_name = condition['left']['value']['content']['ref_node_id']
+                reference_param_name = condition['left']['value']['content']['ref_var_name']
+                param_value = self.params_pool[reference_node_name][reference_param_name]
+                condition['left']['value']['content'] = param_value
+            elif condition['right']['value']['type'] == 'ref':
+                reference_node_name = condition['right']['value']['content']['ref_node_id']
+                reference_param_name = condition['right']['value']['content']['ref_var_name']
+                param_value = self.params_pool[reference_node_name][reference_param_name]
+                condition['right']['value']['content'] = param_value
+
+        return param_spec
+
+    def generate_and_execute_condition_python_code(self, switch_node_id, condition_data, branch):
+        logger.info(
+            f"======= 进入分支 {branch}")
+        logic = condition_data['logic']
+        target_node_id = condition_data['target_node_id']
+        conditions = condition_data['conditions']
+        condition_str = ""
+        # conditions为空列表且之前的条件不满足时，代表条件为else
+        if not conditions:
+            if switch_node_id not in self.conditions_pool or not any(self.conditions_pool[switch_node_id].values()):
+                self.conditions_pool[switch_node_id][target_node_id] = True
+                self.conditions_priority_pool[target_node_id] = 1
+            else:
+                self.conditions_pool[switch_node_id][target_node_id] = False
+                self.conditions_priority_pool[target_node_id] = 1
+        else:
+            for i, condition in enumerate(conditions):
+                left = condition['left']
+                right = condition['right']
+                operator = condition['operator']
+                # 右边参数类型支持ref和literal
+                right_data_type = right['value']['type']
+
+                left_value = left['value']['content']
+                right_value = right['value']['content']
+
+                condition_str += self.generate_operator_comparison(operator, left_value, right_value, right_data_type)
+
+                if i < len(conditions) - 1:
+                    condition_str += f" {logic} "
+            logger.info(
+                f"======= Switch Node condition_str {condition_str}")
+            try:
+                condition_func = eval(condition_str)
+            except Exception as e:
+                error_message = f"条件语句错误: {e}"
+                raise error_message
+            # 确认当前条件成功的分支
+            self.success_branch = branch + 1 if condition_func else -1
+            # 添加执行结果到conditions_pool中，后续节点进行判断
+            if not self.conditions_pool:
+                self.conditions_pool.setdefault(switch_node_id, {})[target_node_id] = condition_func
+                self.conditions_priority_pool[target_node_id] = 1
+            else:
+                self.conditions_pool[switch_node_id][target_node_id] = condition_func
+                self.conditions_priority_pool[target_node_id] = 1
+
+    def generate_operator_comparison(self, operator, left_value, right_value, data_type) -> str:
+        if data_type == "ref":
+            if isinstance(left_value, str):
+                left_value = f"'{left_value}'"
+            if isinstance(right_value, str):
+                right_value = f"'{right_value}'"
+            switcher = {
+                'eq': f"{left_value} == {right_value}",
+                'not_eq': f"{left_value} != {right_value}",
+                'len_ge': f"len({left_value}) >= len({right_value})",
+                'len_gt': f"len({left_value}) > len({right_value})",
+                'len_le': f"len({left_value}) <= len({right_value})",
+                'len_lt': f"len({left_value}) < len({right_value})",
+                'empty': f"{left_value} == ''",
+                'not_empty': f"{left_value} != ''",
+                'in': f"{right_value} in {left_value}",
+                'not_in': f"{right_value} not in {left_value}"
+            }
+        else:
+            if isinstance(left_value, str):
+                left_value = f"'{left_value}'"
+            switcher = {
+                'eq': f"{left_value} == '{right_value}'",
+                'not_eq': f"{left_value} != '{right_value}'",
+                'len_ge': f"len({left_value}) >= {right_value}",
+                'len_gt': f"len({left_value}) > {right_value}",
+                'len_le': f"len({left_value}) <= {right_value}",
+                'len_lt': f"len({left_value}) < {right_value}",
+                'empty': f"{left_value} == ''",
+                'not_empty': f"{left_value} != ''",
+                'in': f"'{right_value}' in {left_value}",
+                'not_in': f"'{right_value}' not in {left_value}"
+            }
+        try:
+            return switcher.get(operator)
+        except KeyError:
+            raise ValueError(f"Unsupported operator: {operator}")
+
+    def validate_node_condition(self, node_id):
+        logger.info(f"Switch Node判断池 {self.conditions_pool}")
+        if not self.conditions_pool:
+            self.conditions_priority_pool[node_id] = 0
+            return True
+
+        predecessors_list = list(self.predecessors(node_id))
+        if not predecessors_list:
+            raise Exception("节点连接存在错误")
+
+        switch_node = next(
+            (item for item in predecessors_list if self.nodes[item]["opt"].node_type == WorkflowNodeType.SWITCH), None)
+
+        if switch_node and self.conditions_pool[switch_node][node_id]:
+            self.conditions_priority_pool[node_id] = 1
+            return True
+        else:
+            self.conditions_priority_pool[node_id] = 1
+            return False
+
+    def validate_predecessor_condition(self, node_id) -> bool:
+        predecessor_status = {}
+        predecessor_node_type = {}
+        conditions_priority = self.conditions_priority_pool
+        if self.predecessors(node_id):
+            predecessors_list = list(self.predecessors(node_id))
+            for item in predecessors_list:
+                predecessor_status[item] = self.nodes[item]["opt"].running_status
+                predecessor_node_type[item] = self.nodes[item]["opt"].node_type
+
+            logger.info(
+                f"节点 {node_id}, predecessor_status: {predecessor_status}, "
+                f"predecessor_node_type: {predecessor_node_type}"
+                f"conditions_priority: {conditions_priority}")
+            # 检查前驱节点是否有运行成功的节点，如果前驱节点存在成功节点，则当前节点为”running“并且排除起始节点和分支器节点
+            if any(s == WorkflowNodeStatus.SUCCESS for s in predecessor_status.values()) and not any(
+                    t in {WorkflowNodeType.SWITCH} for t in predecessor_node_type.values()):
+                if all(conditions_priority[p] == 1 for p in predecessors_list):
+                    logger.info("进入True1")
+                    return True
+
+                elif any(conditions_priority[p] == 1 and predecessor_status[p] == "success" for p in predecessors_list):
+                    logger.info("进入True2")
+                    return True
+
+                elif any(conditions_priority[p] == 1 and predecessor_status[p] == "running_skip" for p in predecessors_list):
+                    logger.info("进入False1")
+                    return False
+
+                else:
+                    logger.info("进入True3")
+                    return True
+
+            # 如果全部前驱节点处于 'running_skip' 状态，则不执行当前节点
+            if all(s == WorkflowNodeStatus.RUNNING_SKIP for  s in predecessor_status):
+                logger.info("进入False2")
+                return False
+
+            return False
+        else:
+            raise Exception("节点连接存在错误")
 
     def generate_node_param_real_for_api_input(self, param_spec: dict) -> (dict, dict):
         query_param_result, json_body_param_result = {}, {}
@@ -157,7 +326,10 @@ class ASDiGraph(nx.DiGraph):
         # 注意到多个节点并发运行时，字典params_pool是共享变量，
         # 但是由于GIL的机制天然保证了多线程之间的串行运行顺序，以及每个节点只操作字典params_pool的各自不同key，这里简单起见，可以不加锁
         # TODO 加 threading lock
-        self.params_pool[node_id] |= node_output_params
+        if node_id not in self.params_pool:
+            self.params_pool[node_id] = node_output_params
+        else:
+            self.params_pool[node_id] |= node_output_params
 
     @staticmethod
     def generate_node_param_spec(param_spec: dict) -> dict:
@@ -185,7 +357,7 @@ class ASDiGraph(nx.DiGraph):
     def update_nodes_with_values(nodes, output_values, input_values, status_values, message_values):
         for index, node in enumerate(nodes):
             node_id = node['node_id']
-            node['node_status'] = status_values.get(node_id, "init")
+            node['node_status'] = status_values.get(node_id, WorkflowNodeStatus.INIT)
             node['node_message'] = message_values.get(node_id, "")
             node['inputs'] = input_values.get(node_id, {})
             node['outputs'] = output_values.get(node_id, {})
@@ -413,6 +585,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.PYTHON,
             WorkflowNodeType.API,
             WorkflowNodeType.LLM,
+            WorkflowNodeType.SWITCH,
         ]:
             raise NotImplementedError(node_cls)
 
@@ -495,7 +668,17 @@ class WorkflowNodeType(IntEnum):
     PYTHON = 8
     API = 9
     LLM = 10
+    SWITCH = 11
 
+
+class WorkflowNodeStatus:
+    """Enum for workflow node status"""
+
+    INIT = 'init'
+    RUNNING = 'running'
+    SUCCESS = 'success'
+    FAILED = 'failed'
+    RUNNING_SKIP = 'running_skip'
 
 class WorkflowNode(ABC):
     """
@@ -1309,7 +1492,7 @@ class StartNode(WorkflowNode):
         self.input_params = {}
         self.output_params = {}
         # init --> running -> success/failed
-        self.running_status = "init"
+        self.running_status = WorkflowNodeStatus.INIT
         self.running_message = ""
         self.dag_obj = dag_obj
         self.dag_id = ""
@@ -1318,15 +1501,16 @@ class StartNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs):
         # 注意，这里是开始节点，所以不需要判断入参是否为空
-
-        self.running_status = 'running'
+        
+        self.running_status = WorkflowNodeStatus.RUNNING
         try:
+            self.dag_obj.conditions_priority_pool[self.node_id] = 0
             self.run(*args, **kwargs)
-            self.running_status = 'success'
+            self.running_status = WorkflowNodeStatus.SUCCESS
             return self.output_params
         except Exception as err:
             logger.error(f'{traceback.format_exc()}')
-            self.running_status = 'failed'
+            self.running_status = WorkflowNodeStatus.FAILED
             self.running_message = f'{repr(err)}'
             return {}
 
@@ -1425,7 +1609,7 @@ class EndNode(WorkflowNode):
         self.input_params = {}
         self.output_params = {}
         # init --> running -> success/failed:xxx
-        self.running_status = "init"
+        self.running_status = WorkflowNodeStatus.INIT
         self.running_message = ""
         self.dag_obj = dag_obj
         self.dag_id = ""
@@ -1433,20 +1617,20 @@ class EndNode(WorkflowNode):
             self.dag_id = self.dag_obj.uuid
 
     def __call__(self, *args, **kwargs) -> dict:
-        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        # 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
         if len(kwargs) == 0:
-            self.running_status = 'init'
+            self.running_status = WorkflowNodeStatus.INIT
             return {}
 
-        self.running_status = 'running'
+        self.running_status = WorkflowNodeStatus.RUNNING
         try:
             self.run(*args, **kwargs)
-            self.running_status = 'success'
+            self.running_status = WorkflowNodeStatus.SUCCESS
             # 尾节点，没有输出值
             return {}
         except Exception as err:
             logger.error(f'{traceback.format_exc()}')
-            self.running_status = 'failed'
+            self.running_status = WorkflowNodeStatus.FAILED
             self.running_message = f'{repr(err)}'
             return {}
 
@@ -1539,7 +1723,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.output_params = {}
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
-        self.running_status = "init"
+        self.running_status = WorkflowNodeStatus.INIT
         self.running_message = ""
         self.dag_obj = dag_obj
         self.dag_id = ""
@@ -1547,21 +1731,37 @@ class PythonServiceUserTypingNode(WorkflowNode):
             self.dag_id = self.dag_obj.uuid
 
         self.python_code = ""
+        self.condition_output = {}
 
     def __call__(self, *args, **kwargs) -> dict:
-        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
         if len(kwargs) == 0:
-            self.running_status = 'init'
+            self.running_status = WorkflowNodeStatus.INIT
             return {}
+        logger.info(f"正在在节点运行 {self.node_id}")
+        # 1. 节点前驱节点存在Switch节点, 且节点所在分支满足条件或不存在在Switch分支后， 优先级1 (前序节点存在未运行节点不影响当前节点状态)
+        if self.dag_obj.validate_node_condition(self.node_id):
+            self.running_status = WorkflowNodeStatus.RUNNING
+        # 2. 节点前驱节点存在Switch节点, 且节点所在分支不满足条件, 置为未运行状态，节点返回空值
+        else:
+            # 2.1 节点前驱节点不存在Switch节点, 且节点前序节点存在未运行时，
+            # 该节点为未运行, 前序节点存在运行节点，该节点为运行节点
+            if not self.dag_obj.validate_predecessor_condition(self.node_id):
+                self.running_status = WorkflowNodeStatus.RUNNING_SKIP
+                self.dag_obj.update_params_pool_with_running_node(self.node_id, self.condition_output)
+                logger.info(f"self.condition_output {self.condition_output}")
+                return self.condition_output
+            # 2.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
+            else:
+                self.running_status = WorkflowNodeStatus.RUNNING
 
-        self.running_status = 'running'
         try:
             self.run(*args, **kwargs)
-            self.running_status = 'success'
+            self.running_status = WorkflowNodeStatus.SUCCESS
             return self.output_params
         except Exception as err:
             logger.error(f'{traceback.format_exc()}')
-            self.running_status = 'failed'
+            self.running_status = WorkflowNodeStatus.FAILED
             self.running_message = f'{repr(err)}'
             return {}
 
@@ -1595,8 +1795,10 @@ class PythonServiceUserTypingNode(WorkflowNode):
             param_one_dict = self.dag_obj.generate_node_param_real(param_spec)
             self.input_params['params'] |= param_one_dict
 
-        # 2. 运行python解释器代码
-        # 单个节点调试运行场景
+        logger.info(f"self.input_params, {self.input_params}")
+        logger.info(f"self.output_params, {self.output_params}")
+        logger.info(f"self.node_id, {self.node_id}")
+        # 2. 运行python解释器代码        # 单个节点调试运行场景"
         if len(self.output_params_spec) == 0:
             if len(kwargs) > 0 and len(self.input_params['params']) > 0:
                 raise Exception("single node debug run, but real input param not empty list")
@@ -1633,6 +1835,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
     def compile(self) -> dict:
         # 检查参数格式是否正确
         logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        logger.info(f"{self.node_id}, compile运行: {self.opt_kwargs}")
         params_dict = self.opt_kwargs
 
         # 检查参数格式是否正确
@@ -1692,7 +1895,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
 
             param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
-
+            self.condition_output |= param_one_dict
         return {
             "imports": "",
             "inits": "",
@@ -1722,7 +1925,7 @@ class ApiNode(WorkflowNode):
         self.output_params = {}
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
-        self.running_status = "init"
+        self.running_status = WorkflowNodeStatus.INIT
         self.running_message = ''
         self.dag_obj = dag_obj
         self.dag_id = ""
@@ -1735,6 +1938,7 @@ class ApiNode(WorkflowNode):
         self.api_header = {}
         self.input_params_for_query = {}
         self.input_params_for_body = {}
+        self.condition_output = {}
 
     def compile(self) -> dict:
         # 检查参数格式是否正确
@@ -1809,6 +2013,7 @@ class ApiNode(WorkflowNode):
 
             param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
+            self.condition_output |= param_one_dict
 
         return {
             "imports": "",
@@ -1817,19 +2022,34 @@ class ApiNode(WorkflowNode):
         }
 
     def __call__(self, *args, **kwargs):
-        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
         if len(kwargs) == 0:
-            self.running_status = 'init'
+            self.running_status = WorkflowNodeStatus.INIT
             return {}
+        # 1. 节点前驱节点存在Switch节点, 且节点所在分支满足条件或不存在在Switch分支后， 优先级1 (前序节点存在未运行节点不影响当前节点状态)
+        if self.dag_obj.validate_node_condition(self.node_id):
 
-        self.running_status = 'running'
+            self.running_status = WorkflowNodeStatus.RUNNING
+        # 2. 节点前驱节点存在Switch节点, 且节点所在分支不满足条件, 置为未运行状态，节点返回空值
+        else:
+            # 2.1 节点前驱节点不存在Switch节点, 且节点前序节点存在未运行时，
+            # 该节点为未运行, 前序节点存在运行节点，该节点为运行节点
+            if not self.dag_obj.validate_predecessor_condition(self.node_id):
+                self.running_status = WorkflowNodeStatus.RUNNING_SKIP
+                self.dag_obj.update_params_pool_with_running_node(self.node_id, self.condition_output)
+                logger.info(f"self.condition_output {self.condition_output}")
+                return self.condition_output
+            # 2.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
+            else:
+                self.running_status = WorkflowNodeStatus.RUNNING
+
         try:
             self.run(*args, **kwargs)
-            self.running_status = 'success'
+            self.running_status = WorkflowNodeStatus.SUCCESS
             return self.output_params
         except Exception as err:
             logger.error(f'{traceback.format_exc()}')
-            self.running_status = 'failed'
+            self.running_status = WorkflowNodeStatus.FAILED
             self.running_message = f'{repr(err)}'
             return {}
 
@@ -1923,7 +2143,7 @@ class LLMNode(WorkflowNode):
         self.output_params = {}
         self.output_params_spec = {}
         # init --> running -> success/failed:xxx
-        self.running_status = "init"
+        self.running_status = WorkflowNodeStatus.INIT
         self.running_message = ''
         self.dag_obj = dag_obj
         self.dag_id = ""
@@ -1935,6 +2155,7 @@ class LLMNode(WorkflowNode):
         self.api_header = {}
         self.input_params_for_query = {}
         self.input_params_for_body = {}
+        self.condition_output = {}
 
     def compile(self) -> dict:
         # 检查参数格式是否正确
@@ -1976,6 +2197,7 @@ class LLMNode(WorkflowNode):
         for i, param_spec in enumerate(params_dict['outputs']):
             param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
             self.output_params_spec = param_one_dict
+            self.condition_output |= param_one_dict
 
         return {
             "imports": "",
@@ -1984,19 +2206,34 @@ class LLMNode(WorkflowNode):
         }
 
     def __call__(self, *args, **kwargs):
-        # 注意，入参为空，表示上一个节点没有运行成功，这里简单起见，当前节点认为尚未运行
+        # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
         if len(kwargs) == 0:
-            self.running_status = 'init'
+            self.running_status = WorkflowNodeStatus.INIT
             return {}
+        # 1. 节点前驱节点存在Switch节点, 且节点所在分支满足条件或不存在在Switch分支后， 优先级1 (前序节点存在未运行节点不影响当前节点状态)
+        if self.dag_obj.validate_node_condition(self.node_id):
 
-        self.running_status = 'running'
+            self.running_status = WorkflowNodeStatus.RUNNING
+        # 2. 节点前驱节点存在Switch节点, 且节点所在分支不满足条件, 置为未运行状态，节点返回空值
+        else:
+            # 2.1 节点前驱节点不存在Switch节点, 且节点前序节点存在未运行时，
+            # 该节点为未运行, 前序节点存在运行节点，该节点为运行节点
+            if not self.dag_obj.validate_predecessor_condition(self.node_id):
+                self.running_status = WorkflowNodeStatus.RUNNING_SKIP
+                self.dag_obj.update_params_pool_with_running_node(self.node_id, self.condition_output)
+                logger.info(f"self.condition_output {self.condition_output}")
+                return self.condition_output
+            # 2.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
+            else:
+                self.running_status = WorkflowNodeStatus.RUNNING
+
         try:
             self.run(*args, **kwargs)
-            self.running_status = 'success'
+            self.running_status = WorkflowNodeStatus.SUCCESS
             return self.output_params
         except Exception as err:
             logger.error(f'{traceback.format_exc()}')
-            self.running_status = 'failed'
+            self.running_status = WorkflowNodeStatus.FAILED
             self.running_message = f'{repr(err)}'
             return {}
 
@@ -2090,6 +2327,123 @@ class LLMNode(WorkflowNode):
         updated_params_dict = {'content': content}
         return updated_params_dict
 
+class SwitchNode(WorkflowNode):
+    """
+    A node representing a switch-case structure within a workflow.
+    SwitchPipelineNode routes the execution to different node nodes
+    based on the evaluation of a specified key or condition.
+    """
+
+    node_type = WorkflowNodeType.SWITCH
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            dag_obj: Optional[ASDiGraph] = None,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        # opt_kwargs 包含用户定义的节点输入变量
+        self.input_params = {}
+        self.output_params = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = WorkflowNodeStatus.INIT
+        self.running_message = ""
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
+
+    def __call__(self, *args, **kwargs):
+        # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
+        if len(kwargs) == 0:
+            self.running_status = WorkflowNodeStatus.INIT
+            return {}
+        # 1. 节点前驱节点存在Switch节点, 且节点所在分支满足条件或不存在在Switch分支后， 优先级1 (前序节点存在未运行节点不影响当前节点状态)
+        if self.dag_obj.validate_node_condition(self.node_id):
+
+            self.running_status = WorkflowNodeStatus.RUNNING
+        # 2. 节点前驱节点存在Switch节点, 且节点所在分支不满足条件, 置为未运行状态，节点返回空值
+        else:
+            # 2.1 节点前驱节点不存在Switch节点, 且节点前序节点存在未运行时，
+            # 该节点为未运行, 前序节点存在运行节点，该节点为运行节点
+            if not self.dag_obj.validate_predecessor_condition(self.node_id):
+                self.running_status = WorkflowNodeStatus.RUNNING_SKIP
+                return {}
+            # 2.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
+            else:
+                self.running_status = WorkflowNodeStatus.RUNNING
+
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = WorkflowNodeStatus.SUCCESS
+            branch_number = self.dag_obj.success_branch
+            self.running_message = f'pass to branch {branch_number}'
+            return self.output_params
+        except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
+            self.running_status = WorkflowNodeStatus.FAILED
+            self.running_message = f'{repr(err)}'
+            return {}
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        for item in params_dict["inputs"]:
+            if "logic" not in item:
+                raise Exception("logic not found in inputs")
+            elif "target_node_id" not in item:
+                raise Exception("target node not found in inputs")
+            elif "conditions" not in item:
+                raise Exception("conditions not found in inputs")
+
+        return {
+            "imports": "",
+            "inits": "",
+            "execs": "",
+        }
+
+    def run(self, *args, **kwargs):
+        logger.info(
+            f"======= Switch Node run")
+        params_pool = self.dag_obj.params_pool
+        params_pool.setdefault(self.node_id, {})
+
+        # 1. 建立参数映射
+        params_dict = self.opt_kwargs
+        logger.info(
+            f"======= Switch Node params_dict {params_dict}")
+        for branch, param_spec in enumerate(params_dict['inputs']):
+            logger.info(
+                f"======= Switch Node param_one_dict {param_spec}")
+            param_one_dict = self.dag_obj.generate_node_param_real_for_switch_input(param_spec)
+            # 2. 运行SwitchNode转换代码，将json转换为对应判断
+            self.dag_obj.generate_and_execute_condition_python_code(self.node_id, param_one_dict, branch)
+            logger.info(
+                f"({param_one_dict}, Switch Node run success)")
+        logger.info(
+            f"({self.dag_obj.conditions_pool}, Switch Node run self.dag_obj.conditions)")
+        return self.dag_obj.conditions_pool
+
 
 NODE_NAME_MAPPING = {
     "dashscope_chat": ModelNode,
@@ -2122,6 +2476,7 @@ NODE_NAME_MAPPING = {
     "PythonNode": PythonServiceUserTypingNode,
     "ApiNode": ApiNode,
     "LLMNode": LLMNode,
+    "SwitchNode": SwitchNode,
 }
 
 

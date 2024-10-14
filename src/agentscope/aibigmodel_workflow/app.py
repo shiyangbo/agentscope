@@ -303,7 +303,8 @@ def plugin_run_for_bigmodel(user_id, plugin_en_name) -> str:
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
-    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_status = 'success' if all(
+        node.get('node_status') in ['success', 'running_skip'] for node in nodes_result) else 'failed'
     execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     if not execute_result:
         return json.dumps({"code": 7, "msg": "execute result not exists"})
@@ -408,7 +409,8 @@ def workflow_run() -> Response:
     end_time = time.time()
     executed_time = round(end_time - start_time, 3)
     # 获取workflow与各节点的执行结果
-    execute_status = 'success' if all(node['node_status'] == 'success' for node in nodes_result) else 'failed'
+    execute_status = 'success' if all(
+        node.get('node_status') in ['success', 'running_skip'] for node in nodes_result) else 'failed'
     execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
     # 需要持久化
     logger.info(f"execute_result: {execute_result}")
