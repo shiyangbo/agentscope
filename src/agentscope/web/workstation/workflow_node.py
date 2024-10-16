@@ -121,10 +121,10 @@ class ASDiGraph(nx.DiGraph):
 
     def generate_node_param_real(self, param_spec: dict) -> dict:
         param_name = param_spec['name']
-
         if self.params_pool and param_spec['value']['type'] == 'ref':
             reference_node_name = param_spec['value']['content']['ref_node_id']
             reference_param_name = param_spec['value']['content']['ref_var_name']
+            logger.info(f"引用节点的id{reference_node_name}, 状态{self.nodes[reference_node_name]["opt"].running_status}")
             if self.nodes[reference_node_name]["opt"].running_status == WorkflowNodeStatus.RUNNING_SKIP:
                 return {param_name: None}
             param_value = self.params_pool[reference_node_name][reference_param_name]
@@ -237,7 +237,6 @@ class ASDiGraph(nx.DiGraph):
     def validate_node_condition(self, node_id):
         logger.info(f"Switch Node判断池 {self.conditions_pool}")
         if not self.conditions_pool:
-            self.conditions_priority_pool[node_id] = 0
             return True
 
         predecessors_list = list(self.predecessors(node_id))
@@ -248,16 +247,13 @@ class ASDiGraph(nx.DiGraph):
             (item for item in predecessors_list if self.nodes[item]["opt"].node_type == WorkflowNodeType.SWITCH), None)
 
         if switch_node and self.conditions_pool[switch_node][node_id]:
-            self.conditions_priority_pool[node_id] = 1
             return True
         else:
-            self.conditions_priority_pool[node_id] = 1
             return False
 
     def validate_predecessor_condition(self, node_id) -> bool:
         predecessor_status = {}
         predecessor_node_type = {}
-        conditions_priority = self.conditions_priority_pool
         if self.predecessors(node_id):
             predecessors_list = list(self.predecessors(node_id))
             for item in predecessors_list:
@@ -1734,10 +1730,10 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.condition_output = {}
 
     def __call__(self, *args, **kwargs) -> dict:
-        # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
-        if len(kwargs) == 0:
-            self.running_status = WorkflowNodeStatus.INIT
-            return {}
+        # # 0. 注意，入参为空，表示上一个节点没有运行成功，当前节点为等待中状态
+        # if len(kwargs) == 0:
+        #     self.running_status = WorkflowNodeStatus.INIT
+        #     return {}
         logger.info(f"正在在节点运行 {self.node_id}")
         # 1. 节点前驱节点存在Switch节点, 且节点所在分支满足条件或不存在在Switch分支后， 优先级1 (前序节点存在未运行节点不影响当前节点状态)
         if self.dag_obj.validate_node_condition(self.node_id):

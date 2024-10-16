@@ -52,7 +52,7 @@ if test_without_mysql:
     os.makedirs(str(_cache_dir), exist_ok=True)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{str(_cache_db)}"
 else:
-    with open('/agentscope/src/agentscope/aibigmodel_workflow/sql_config.yaml', 'r') as file:
+    with open('sql_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
 
     # 从 YAML 文件中提取参数

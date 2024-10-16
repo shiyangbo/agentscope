@@ -1,4 +1,4 @@
- # MYSQL数据库配置
+
  DIALECT: 'mysql'
  DRIVER: 'pymysql'
  USERNAME: 'root'
@@ -6,5 +6,5 @@
  HOST: '127.0.0.1'
  PORT: '3306'
  DATABASE: 'agentscope'
- #服务URL
+
  SERVICE_URL: 'http://106.74.31.170:5003/plugin/api'
