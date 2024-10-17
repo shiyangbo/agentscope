@@ -46,7 +46,7 @@ from agentscope.service import (
     service_status,
 )
 
-from agentscope.service.web.apiservice import api_request_for_big_model
+from agentscope.service.web.apiservice import api_request_for_big_model, api_request_for_dag_stream_api
 
 try:
     import networkx as nx
@@ -243,6 +243,7 @@ class ASDiGraph(nx.DiGraph):
             # 3.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
             else:
                 return WorkflowNodeStatus.RUNNING, True
+
     def validate_node_condition(self, node_id, predecessors_list) -> bool:
         logger.info(f"Switch Node判断池 {self.conditions_pool}")
         if not self.conditions_pool:
@@ -574,6 +575,7 @@ class ASDiGraph(nx.DiGraph):
             WorkflowNodeType.API,
             WorkflowNodeType.LLM,
             WorkflowNodeType.SWITCH,
+            WorkflowNodeType.RAG,
         ]:
             raise NotImplementedError(node_cls)
 
@@ -657,6 +659,7 @@ class WorkflowNodeType(IntEnum):
     API = 9
     LLM = 10
     SWITCH = 11
+    RAG = 12
 
 
 class WorkflowNodeStatus:
@@ -2350,6 +2353,160 @@ class SwitchNode(WorkflowNode):
         return self.dag_obj.conditions_pool
 
 
+class RAGNode(WorkflowNode):
+    """
+    RAG Node.
+    """
+
+    node_type = WorkflowNodeType.RAG
+
+    def __init__(
+            self,
+            node_id: str,
+            opt_kwargs: dict,
+            source_kwargs: dict,
+            dep_opts: list,
+            dag_obj: Optional[ASDiGraph] = None,
+    ) -> None:
+        super().__init__(node_id, opt_kwargs, source_kwargs, dep_opts)
+        self.input_params = {}
+        self.output_params = {}
+        self.output_params_spec = {}
+        # init --> running -> success/failed:xxx
+        self.running_status = WorkflowNodeStatus.INIT
+        self.running_message = ''
+        self.dag_obj = dag_obj
+        self.dag_id = ""
+        if self.dag_obj:
+            self.dag_id = self.dag_obj.uuid
+
+        # GET or POST
+        self.api_url = ""
+        self.api_header = {}
+        self.input_params_for_query = {}
+        self.input_params_for_body = {}
+
+    def compile(self) -> dict:
+        # 检查参数格式是否正确
+        logger.info(f"{self.var_name}, compile param: {self.opt_kwargs}")
+        params_dict = self.opt_kwargs
+        # 检查参数格式是否正确
+        if 'inputs' not in params_dict:
+            raise Exception("inputs key not found")
+        if 'outputs' not in params_dict:
+            raise Exception("outputs key not found")
+        if 'settings' not in params_dict:
+            raise Exception("settings key not found")
+
+        if not isinstance(params_dict['inputs'], list):
+            raise Exception(f"inputs:{params_dict['inputs']} type is not list")
+        if not isinstance(params_dict['outputs'], list):
+            raise Exception(f"outputs:{params_dict['outputs']} type is not list")
+        if not isinstance(params_dict['settings'], dict):
+            raise Exception(f"settings:{params_dict['settings']} type is not dict")
+
+        # 调用内部函数，将LLM Model请求参数组合为大模型可以识别的参数
+        params_dict = RAGNode.convert_rag_request(params_dict)
+        self.api_url = params_dict['settings']['url']
+        self.api_header = params_dict['settings']['headers']
+        if not isinstance(self.api_header, dict):
+            raise Exception(f"header:{self.api_header} type is not dict")
+
+        for i, param_spec in enumerate(params_dict['inputs']):
+            param_spec.setdefault('extra', {})
+            param_spec['extra'].setdefault('location', '')
+            if param_spec['extra'].get('location', '') not in {'query', 'body'}:
+                raise Exception("input param: {param_spec} extra-location not found('query' or 'body')")
+
+        for i, param_spec in enumerate(params_dict['outputs']):
+            param_one_dict = ASDiGraph.generate_node_param_spec(param_spec)
+            self.output_params_spec = param_one_dict
+
+        return {
+            "imports": "",
+            "inits": "",
+            "execs": "",
+        }
+
+    def __call__(self, *args, **kwargs):
+        # 判断当前节点的运行状态
+        self.running_status, is_running = self.dag_obj.determine_current_node_running_status(self.node_id)
+        if not is_running:
+            return {}
+
+        try:
+            self.run(*args, **kwargs)
+            self.running_status = WorkflowNodeStatus.SUCCESS
+            return self.output_params
+        except Exception as err:
+            logger.error(f'{traceback.format_exc()}')
+            self.running_status = WorkflowNodeStatus.FAILED
+            self.running_message = f'{repr(err)}'
+            return {}
+
+    def run(self, *args, **kwargs):
+        self.dag_obj.init_params_pool_with_running_node(self.node_id)
+
+        # 1. 建立参数映射
+        params_dict = self.opt_kwargs
+
+        for i, param_spec in enumerate(params_dict['inputs']):
+            param_one_dict_for_query, param_one_dict_for_body \
+                = self.dag_obj.generate_node_param_real_for_api_input(param_spec)
+
+            if not isinstance(param_one_dict_for_query, dict):
+                raise Exception("input param: {param_one_dict_for_query} type not dict")
+            if not isinstance(param_one_dict_for_body, dict):
+                raise Exception("input param: {param_one_dict_for_body} type not dict")
+
+            self.input_params |= param_one_dict_for_query
+            self.input_params |= param_one_dict_for_body
+            self.input_params_for_query |= param_one_dict_for_query
+            self.input_params_for_body |= param_one_dict_for_body
+
+        # RAG参数校验
+        threshold = self.input_params_for_body.get('threshold', None)
+        if not (0 <= threshold <= 1):
+            raise Exception("过滤阈值参数错误，应该在[0,1]之间")
+        top_k = self.input_params_for_body.get('top_k', None)
+        if not (0 <= top_k <= 10):
+            raise Exception("选取知识条数参数错误，应该在[0,10]之间")
+        question = self.input_params_for_body.get('question', None)
+        if not question:
+            raise Exception("RAG节点问题为空,请填写问题")
+        if 'headers' not in params_dict['settings']:
+            raise Exception("headers key not found in settings")
+        # 2. 使用 api_request 函数进行 API 请求设置
+        response = api_request_for_dag_stream_api(url=self.api_url, method='POST', headers=self.api_header,
+                                              data=self.input_params_for_body)
+        if response.status == service_status.ServiceExecStatus.ERROR:
+            raise Exception(str(response.content))
+        if response.content is None:
+            raise Exception("Can not get response from selected model")
+        # 3. 拆包解析
+        self.output_params = LLMNode.convert_llm_response(response.content)
+        # 检查返回值是否对应
+        for k in self.output_params_spec:
+            if k not in self.output_params:
+                logger.error(f"api response: {self.output_params}")
+                raise Exception(f"user defined output parameter {k} not found in api response")
+
+        self.dag_obj.update_params_pool_with_running_node(self.node_id, self.output_params)
+        logger.info(
+            f"{self.var_name}, run success, input params: {self.input_params}, output params: {self.output_params}")
+        return self.output_params
+
+    @staticmethod
+    def convert_rag_request(origin_params_dict: dict) -> dict:
+        # 将name为Input替换为LLM识别的messages
+        for item in origin_params_dict['inputs']:
+            if item['name'] == 'input':
+                item['name'] = 'question'
+        # 添加知识库url地址
+        origin_params_dict['settings']['url'] = 'https://maas-gz-api.ai-yuanjing.com/openapi/knowledge/stream/search'
+        return origin_params_dict
+
+
 NODE_NAME_MAPPING = {
     "dashscope_chat": ModelNode,
     "openai_chat": ModelNode,
@@ -2382,6 +2539,7 @@ NODE_NAME_MAPPING = {
     "ApiNode": ApiNode,
     "LLMNode": LLMNode,
     "SwitchNode": SwitchNode,
+    "RAGNode": RAGNode,
 }
 
 
