@@ -2,6 +2,16 @@
 """Workflow node utils."""
 
 
+class WorkflowNodeStatus:
+    """Enum for workflow node status"""
+
+    INIT = 'init'
+    RUNNING = 'running'
+    SUCCESS = 'success'
+    FAILED = 'failed'
+    RUNNING_SKIP = 'running_skip'
+
+
 def is_callable_expression(s: str) -> bool:
     """Check a expression whether a callable expression"""
     try:
