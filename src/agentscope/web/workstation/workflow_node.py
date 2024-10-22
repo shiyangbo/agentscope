@@ -48,6 +48,7 @@ from agentscope.service import (
 
 from agentscope.service.web.apiservice import api_request_for_big_model
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
+
 try:
     import networkx as nx
 except ImportError:
@@ -229,7 +230,7 @@ class ASDiGraph(nx.DiGraph):
     def confirm_current_node_running_status(self, node_id, input_params) -> (str, bool):
         predecessors_list = list(self.predecessors(node_id))
         # 0. 适配单节点, 节点无前驱节点且输入参数为空时，节点为等待状态
-        if len(input_params) == 0 and not list(self.predecessors(node_id)):
+        if len(input_params) == 0 and not predecessors_list:
             return WorkflowNodeStatus.INIT, False
         # 1. 节点前驱节点存在失败节点, 节点为等待状态
         if any(
@@ -246,6 +247,7 @@ class ASDiGraph(nx.DiGraph):
         # 3.2 节点前驱节点不存在Switch节点, 且节点前序节点均为运行时，该节点为运行
         else:
             return WorkflowNodeStatus.RUNNING, True
+
     def validate_node_condition(self, node_id, predecessors_list) -> bool:
         logger.info(f"Switch Node判断池 {self.conditions_pool}")
         if not self.conditions_pool:
@@ -253,6 +255,9 @@ class ASDiGraph(nx.DiGraph):
 
         switch_node = next(
             (item for item in predecessors_list if self.nodes[item]["opt"].node_type == WorkflowNodeType.SWITCH), None)
+
+        if switch_node not in self.conditions_pool:
+            return False
 
         if switch_node and self.conditions_pool[switch_node][node_id]:
             return True
@@ -269,15 +274,15 @@ class ASDiGraph(nx.DiGraph):
         logger.info(
             f"节点 {node_id}, predecessor_status: {predecessor_status}, "
             f"predecessor_node_type: {predecessor_node_type}")
+        # 如果全部前驱节点处于 'running_skip' 状态，则不执行当前节点
+        if all(s == WorkflowNodeStatus.RUNNING_SKIP for s in predecessor_status.values()):
+            return False
+
         # 检查前驱节点是否有运行成功的节点，如果前驱节点全部为成功节点，则当前节点为”running“并且排除分支器节点
         if (all(s in {WorkflowNodeStatus.SUCCESS, WorkflowNodeStatus.RUNNING_SKIP}
                 for s in predecessor_status.values()) and not
         any(t in {WorkflowNodeType.SWITCH} for t in predecessor_node_type.values())):
             return True
-
-        # 如果全部前驱节点处于 'running_skip' 状态，则不执行当前节点
-        if all(s == WorkflowNodeStatus.RUNNING_SKIP for s in predecessor_status):
-            return False
 
         return False
 
@@ -658,6 +663,7 @@ class WorkflowNodeType(IntEnum):
     API = 9
     LLM = 10
     SWITCH = 11
+
 
 class WorkflowNode(ABC):
     """
@@ -1595,8 +1601,17 @@ class EndNode(WorkflowNode):
             self.dag_id = self.dag_obj.uuid
 
     def __call__(self, *args, **kwargs) -> dict:
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
-        if not is_running:
+        # 判断当前节点的运行状态
+        predecessors_list = list(self.dag_obj.predecessors(self.node_id))
+        # 0. 节点无前驱节点且输入参数为空时，节点为等待状态
+        if len(kwargs) == 0 and not predecessors_list:
+            self.running_status = WorkflowNodeStatus.INIT
+            return {}
+        # 1. 节点前驱节点存在失败节点, 节点为等待状态
+        if any(
+                self.dag_obj.nodes[node]["opt"].running_status in WorkflowNodeStatus.FAILED for node
+                in predecessors_list):
+            self.running_status = WorkflowNodeStatus.INIT
             return {}
         try:
             self.run(*args, **kwargs)
