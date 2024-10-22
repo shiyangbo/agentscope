@@ -224,10 +224,13 @@ class ASDiGraph(nx.DiGraph):
         except KeyError:
             raise ValueError(f"Unsupported operator: {operator}")
 
-    def confirm_current_node_running_status(self, node_id) -> (str, bool):
+    def confirm_current_node_running_status(self, node_id, input_params) -> (str, bool):
         predecessors_list = list(self.predecessors(node_id))
-        # 1. 节点前驱节点存在失败节点或没有前驱节点, 节点为等待状态
-        if len(predecessors_list) == 0 or any(
+        # 0. 适配单节点, 节点无前驱节点且输入参数为空时，节点为等待状态
+        if len(input_params) == 0 and not list(self.predecessors(node_id)):
+            return WorkflowNodeStatus.INIT, False
+        # 1. 节点前驱节点存在失败节点, 节点为等待状态
+        if any(
                 self.nodes[node]["opt"].running_status == WorkflowNodeStatus.FAILED for node
                 in predecessors_list):
             return WorkflowNodeStatus.INIT, False
@@ -1590,7 +1593,7 @@ class EndNode(WorkflowNode):
             self.dag_id = self.dag_obj.uuid
 
     def __call__(self, *args, **kwargs) -> dict:
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id)
+        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
         if not is_running:
             return {}
         try:
@@ -1704,7 +1707,7 @@ class PythonServiceUserTypingNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs) -> dict:
         # 判断当前节点的运行状态
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id)
+        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
         if not is_running:
             return {}
 
@@ -1972,7 +1975,7 @@ class ApiNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs):
         # 判断当前节点的运行状态
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id)
+        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
         if not is_running:
             return {}
 
@@ -2138,7 +2141,7 @@ class LLMNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs):
         # 判断当前节点的运行状态
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id)
+        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
         if not is_running:
             return {}
 
@@ -2274,7 +2277,7 @@ class SwitchNode(WorkflowNode):
 
     def __call__(self, *args, **kwargs):
         # 判断当前节点的运行状态
-        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id)
+        self.running_status, is_running = self.dag_obj.confirm_current_node_running_status(self.node_id, kwargs)
         if not is_running:
             return {}
 
