@@ -151,6 +151,8 @@ class ASDiGraph(nx.DiGraph):
     def generate_and_execute_condition_python_code(self, switch_node_id, condition_data, branch):
         logic = condition_data['logic']
         target_node_id = condition_data['target_node_id']
+        if not target_node_id:
+            raise Exception("分支器节点存在未连接的分支")
         conditions = condition_data['conditions']
         condition_str = ""
         # conditions为空列表且之前的条件不满足时，代表条件为else
@@ -199,8 +201,8 @@ class ASDiGraph(nx.DiGraph):
                 'len_gt': f"len({left_value}) > len({right_value})",
                 'len_le': f"len({left_value}) <= len({right_value})",
                 'len_lt': f"len({left_value}) < len({right_value})",
-                'empty': f"{left_value} == ''",
-                'not_empty': f"{left_value} != ''",
+                'empty': f"{left_value} is None",
+                'not_empty': f"{left_value} is not None",
                 'in': f"{right_value} in {left_value}",
                 'not_in': f"{right_value} not in {left_value}"
             }
@@ -214,8 +216,8 @@ class ASDiGraph(nx.DiGraph):
                 'len_gt': f"len({left_value}) > {right_value}",
                 'len_le': f"len({left_value}) <= {right_value}",
                 'len_lt': f"len({left_value}) < {right_value}",
-                'empty': f"{left_value} == ''",
-                'not_empty': f"{left_value} != ''",
+                'empty': f"{left_value} is None",
+                'not_empty': f"{left_value} is not None",
                 'in': f"'{right_value}' in {left_value}",
                 'not_in': f"'{right_value}' not in {left_value}"
             }
