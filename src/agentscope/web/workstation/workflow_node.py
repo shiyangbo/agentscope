@@ -174,7 +174,8 @@ class ASDiGraph(nx.DiGraph):
                 left_value = left['value']['content']
                 right_value = right['value']['content']
 
-                condition_str += self.generate_operator_comparison(operator, left_value, right_value, right_data_type)
+                condition_str += self.generate_operator_comparison(operator, repr(left_value), repr(right_value),
+                                                                   right_data_type)
 
                 if i < len(conditions) - 1:
                     condition_str += f" {logic} "
