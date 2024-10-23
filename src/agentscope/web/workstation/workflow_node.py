@@ -158,7 +158,8 @@ class ASDiGraph(nx.DiGraph):
         condition_str = ""
         # conditions为空列表且之前的条件不满足时，代表条件为else
         if not conditions:
-            if switch_node_id not in self.conditions_pool or not any(self.conditions_pool[switch_node_id].values()):
+            if (switch_node_id not in self.conditions_pool or
+                    all(value is False for value in self.conditions_pool[switch_node_id].values())):
                 self.update_conditions_pool_with_running_node(switch_node_id, target_node_id, True)
             else:
                 self.update_conditions_pool_with_running_node(switch_node_id, target_node_id, False)
@@ -185,7 +186,8 @@ class ASDiGraph(nx.DiGraph):
                 error_message = f"条件语句错误: {e}"
                 raise error_message
             # 确认当前条件成功的分支
-            self.selected_branch = branch + 1 if condition_func else -1
+            if self.selected_branch == -1:
+                self.selected_branch = branch + 1 if condition_func else -1
             # 添加执行结果到conditions_pool中，后续节点进行判断
             self.update_conditions_pool_with_running_node(switch_node_id, target_node_id, condition_func)
 
@@ -323,7 +325,18 @@ class ASDiGraph(nx.DiGraph):
         # 但是由于GIL的机制天然保证了多线程之间的串行运行顺序，以及每个节点只操作字典params_pool的各自不同key，这里简单起见，可以不加锁
         # TODO 加 threading lock
         self.conditions_pool.setdefault(switch_node_id, {})
-        self.conditions_pool[switch_node_id][target_node_id] = condition_result
+
+        # 当switch节点有除当前分支之外分支连到了同一节点，且另一分支执行结果为True时，不覆盖条件判断池中的值
+        if (target_node_id in self.conditions_pool[switch_node_id] and
+                self.conditions_pool[switch_node_id][target_node_id] is True):
+            self.conditions_pool[switch_node_id][target_node_id] = True
+            return
+
+        # 条件从第一个到最后一个分支优先级排列，前面的条件优先级更高
+        if not any(value is True for value in self.conditions_pool[switch_node_id].values()):
+            self.conditions_pool[switch_node_id][target_node_id] = condition_result
+        else:
+            self.conditions_pool[switch_node_id][target_node_id] = False
 
     @staticmethod
     def generate_node_param_spec(param_spec: dict) -> dict:
