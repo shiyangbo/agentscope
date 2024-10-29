@@ -2504,12 +2504,15 @@ class RAGNode(WorkflowNode):
         self.input_params_for_body['userId'] = self.userId
         response = api_request_for_big_model(url=self.api_url, method='POST', headers=self.api_header,
                                              data=self.input_params_for_body)
+        logger.info(f'RAG service response {response.content}')
         if response.status == service_status.ServiceExecStatus.ERROR:
             raise Exception(str(response.content))
         if response.content is None:
             raise Exception("Can not get response from RAG service")
-        if len(response.content['data']['searchList']) == 0:
+        if len(response.content['data']['searchList']) == 0 and response.content['code'] != 0:
             raise Exception(f"{response.content['message']}")
+        if len(response.content['data']['searchList']) == 0 and response.content['code'] == 0:
+            raise Exception(f"无法在知识库匹配到结果，请调整参数设置")
         # 3. 拆包解析
         self.output_params = RAGNode.convert_rag_response(response.content)
         # 检查返回值是否对应
