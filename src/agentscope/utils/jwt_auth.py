@@ -56,7 +56,7 @@ def parse_jwt_with_claims(token_input):
                                        "require_exp": True,  # 必须有 exp
                                        "require_nbf": True   # 必须有 nbf
                                         },
-                                   leeway=60)
+                                   leeway=120)
 
         # 使用字典解包来简化claims的构造
         claims_custom = CustomClaims(**{
