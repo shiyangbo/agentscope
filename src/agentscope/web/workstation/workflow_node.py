@@ -184,7 +184,7 @@ class ASDiGraph(nx.DiGraph):
                 condition_func = eval(condition_str)
             except Exception as e:
                 error_message = f"条件语句错误: {e}"
-                raise error_message
+                raise Exception(error_message)
             # 确认当前条件成功的分支
             if self.selected_branch == -1:
                 self.selected_branch = branch + 1 if condition_func else -1
@@ -2499,6 +2499,8 @@ class RAGNode(WorkflowNode):
             raise Exception("RAG节点问题为空,请填写问题")
         if 'headers' not in params_dict['settings']:
             raise Exception("headers key not found in settings")
+        if len(self.knowledgeBase) == 0:
+            raise Exception('知识库参数为空，至少选择一个知识库')
         # 2. 使用 api_request 函数进行 API 请求设置
         self.input_params_for_body['knowledgeBase'] = self.knowledgeBase
         self.input_params_for_body['userId'] = self.userId
