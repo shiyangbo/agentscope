@@ -122,7 +122,7 @@ def plugin_desc_config_generator(data: dict) -> dict:
     ], "paths": {
         f"/run_for_bigmodel/{user_id}/{dag_en_name}": {
             "post": {
-                "summary": f"{dag_name}, {dag_en_name}",
+                "summary": f"{dag_name}",
                 "operationId": f"action_{dag_en_name}",
                 "description": f"{dag_desc}, {dag_desc_example}",
                 "parameters": [
