@@ -40,6 +40,12 @@ class UserPermissionList:
         self.tenant_name = tenant_name  # 云账号显示名
         self.region_id = region_id  # 资源池ID
 
+    def to_dict(self):
+        return {
+            "tenant_id": self.tenant_id,
+            "tenant_name": self.tenant_name,
+            "region_id": self.region_id,
+        }
 
 class TenantInfo:
     def __init__(self, master_tenant_id: Optional[str], master_tenant_name: Optional[str], permission_type: int,
@@ -145,19 +151,21 @@ def get_cloud_type():
         return SIMPLE_CLOUD
 
 
-def get_tenant_id():
+def get_tenant_ids():
     # 从 g 对象中获取租户ID
-    permission_list = g.claims.get("tenant_info")['permission_list']
-    if len(permission_list) > 0:
-        tenant_id = g.claims.get("tenant_info")['permission_list'][0]["tenant_id"]
-    else:
-        tenant_id = ''
+    permission_list = g.claims.get("tenant_info", {}).get('permission_list', [])
+    tenant_ids = []
+    print(permission_list)
+    for permission in permission_list:
+        tenant_id = permission.get('tenant_id')   # 直接使用点操作符访问属性
+        if tenant_id:
+            tenant_ids.append(tenant_id)
 
-    return tenant_id
+    return tenant_ids
 
 
 if __name__ == '__main__':
-    token = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjczMWE1ZmVlLTBhYjctNDQzMS1iMGQzLWY2ODA3ZmJhNWFlNSIsInVzZXJuYW1lIjoiYWRtaW4iLCJuaWNrbmFtZSI6ImFkbWluIiwidXNlclR5cGUiOjAsImJ1ZmZlclRpbWUiOjE3MzMzMDQyODYsImV4cCI6MTczMzM1NDY4NiwiaXNzIjoiNzMxYTVmZWUtMGFiNy00NDMxLWIwZDMtZjY4MDdmYmE1YWU1IiwibmJmIjoxNzMzMjc1NzQ4LCJzdWIiOiJ3ZWIifQ.Q07a9qLSqdBgervcdzqhKXPhXBB8gE3SKCKO2e_s9jU'
+    token = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjRmMmYxYTdkLWUxM2EtNGZiNy05YjY2LTgzMTg3ZDU1MmRkZiIsInVzZXJUeXBlIjowLCJ1c2VybmFtZSI6InpnX3d1bGl1Iiwibmlja25hbWUiOiJ6Z193dWxpdSIsImJ1ZmZlclRpbWUiOjE3MzA5ODMyNDcsImV4cCI6MTczMzU2ODA0NywianRpIjoiNDg0MDMyNTQ4NzQ1NGUyZmE2MDNmZGRkNWJmYTYwYmYiLCJpc3MiOiI0ZjJmMWE3ZC1lMTNhLTRmYjctOWI2Ni04MzE4N2Q1NTJkZGYiLCJuYmYiOjE3MzA5NzYwNDcsInN1YiI6ImtvbmcifQ.3-HNv5BV6d6ZGNWuqmxlV7F7bVrikytZk0PIle7JSF8'
     token_in = token.replace('Bearer ', '')
     claims, err = parse_jwt_with_claims(token_in)
     print(claims)
