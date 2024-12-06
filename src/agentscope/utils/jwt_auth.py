@@ -145,15 +145,17 @@ def get_cloud_type():
         return SIMPLE_CLOUD
 
 
-def get_tenant_id():
+def get_tenant_ids():
     # 从 g 对象中获取租户ID
-    permission_list = g.claims.get("tenant_info")['permission_list']
-    if len(permission_list) > 0:
-        tenant_id = g.claims.get("tenant_info")['permission_list'][0]["tenant_id"]
-    else:
-        tenant_id = ''
+    permission_list = g.claims.get("tenant_info", {}).get('permission_list', [])
+    tenant_ids = []
 
-    return tenant_id
+    for permission in permission_list:
+        tenant_id = permission.get("tenant_id")
+        if tenant_id:
+            tenant_ids.append(tenant_id)
+
+    return tenant_ids
 
 
 if __name__ == '__main__':
