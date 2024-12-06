@@ -1,0 +1,14 @@
+
+ DIALECT: 'mysql'
+ DRIVER: 'pymysql'
+ USERNAME: 'root'
+ PASSWORD: '2292558Huawei'
+ HOST: '127.0.0.1'
+ PORT: '3306'
+ DATABASE: 'agentscope'
+
+ SERVICE_URL: 'http://106.74.31.170:5003/plugin/api'
+ RAG_URL: 'https://122.13.25.19:5001/openapi/tool/oimsunb59e1b94/knowledge/search-knowledge-base'
+ LLM_URL: 'http://192.168.2.180:8152/v1/chat/completions'
+
+ SERVER_PORT: '6672'

@@ -98,9 +98,9 @@ def standardize_single_node_format(data: dict) -> dict:
 
 def plugin_desc_config_generator(data: dict) -> dict:
     dag_name = data['pluginName']
-    user_id = data['userID']
+    identifier = data['identifier']
     service_url = data['serviceURL']
-    if user_id == '':
+    if identifier == '':
         raise Exception("userID not found")
     dag_en_name = data['pluginENName']
     if dag_en_name == '':
@@ -120,7 +120,7 @@ def plugin_desc_config_generator(data: dict) -> dict:
             "url": service_url
         }
     ], "paths": {
-        f"/run_for_bigmodel/{user_id}/{dag_en_name}": {
+        f"/run_for_bigmodel/{identifier}/{dag_en_name}": {
             "post": {
                 "summary": f"{dag_name}",
                 "operationId": f"action_{dag_en_name}",
@@ -174,7 +174,7 @@ def plugin_desc_config_generator(data: dict) -> dict:
     }}
 
     # 完善入参列表
-    request_schema = openapi_schema_dict["paths"][f"/run_for_bigmodel/{user_id}/{dag_en_name}"]["post"]["requestBody"][
+    request_schema = openapi_schema_dict["paths"][f"/run_for_bigmodel/{identifier}/{dag_en_name}"]["post"]["requestBody"][
         "content"]["application/json"]["schema"]
 
     start_node_dict = {}
