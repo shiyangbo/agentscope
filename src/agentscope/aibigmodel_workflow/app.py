@@ -131,7 +131,7 @@ def plugin_publish() -> Response:
     plugin_field = request.json.get("pluginField")
     description = request.json.get("pluginQuestionExample")
     user_id = auth.get_user_id()
-    tenant_id = auth.get_tenant_id()
+    tenant_ids = auth.get_tenant_ids()
     cloud_type = auth.get_cloud_type()
     # 查询workflow_info表获取插件信息
     workflow_result = _WorkflowTable.query.filter(
@@ -151,7 +151,7 @@ def plugin_publish() -> Response:
         ).all()
     elif cloud_type == PRIVATE_CLOUD:
         plugin = _PluginTable.query.filter(
-            _PluginTable.tenant_id == tenant_id,
+            _PluginTable.tenant_id.in_(tenant_ids),
             _PluginTable.plugin_en_name == workflow_result.config_en_name,
         ).all()
     else:
@@ -167,7 +167,7 @@ def plugin_publish() -> Response:
         "pluginField": plugin_field,
         "pluginDescription": description,
         "pluginSpec": dag_content,
-        "identifier": user_id if auth.get_cloud_type() == SIMPLE_CLOUD else tenant_id,
+        "identifier": user_id if auth.get_cloud_type() == SIMPLE_CLOUD else workflow_result.tenant_id,
         "serviceURL": SERVICE_URL
     }
 
@@ -190,7 +190,7 @@ def plugin_publish() -> Response:
                 plugin_field=data["pluginField"],
                 plugin_desc_config=openapi_schema_json_str,
                 published_time=datetime.now(),
-                tenant_id=tenant_id
+                tenant_id=workflow_result.tenant_id
             ),
         )
         db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
@@ -219,12 +219,11 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
         if user_id == "":
             return jsonify({"code": 7, "msg": "user id not found"})
     elif cloud_type == PRIVATE_CLOUD:
-        tenant_id = auth.get_tenant_id()
-        if tenant_id == "":
+        tenant_ids = auth.get_tenant_ids()
+        if len(tenant_ids) == 0:
             return jsonify({"code": 7, "msg": "tenant id not found"})
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
-
 
     plugin = _PluginTable.query.filter(
         _PluginTable.id == workflow_id,
@@ -380,9 +379,16 @@ def workflow_run() -> Response:
     if workflow_id == "":
         return jsonify({"code": 7, "msg": f"workflowID is Null"})
     user_id = auth.get_user_id()
-    tenant_id = auth.get_tenant_id()
+    tenant_ids = auth.get_tenant_ids()
     cloud_type = auth.get_cloud_type()
     logger.info(f"workflow_schema: {workflow_schema}")
+
+    # 查询workflow_info表获取插件信息
+    workflow_result = _WorkflowTable.query.filter(
+        _WorkflowTable.id == workflow_id
+    ).first()
+    if not workflow_result:
+        return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
     try:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
@@ -419,7 +425,8 @@ def workflow_run() -> Response:
                 oldest_record = db.session.query(_ExecuteTable).filter_by(user_id=user_id).order_by(
                     _ExecuteTable.executed_time).first()
             else:
-                oldest_record = db.session.query(_ExecuteTable).filter_by(tenant_id=tenant_id).order_by(
+                oldest_record = db.session.query(_ExecuteTable).filter(
+                    _ExecuteTable.tenant_id.in_(tenant_ids)).order_by(
                     _ExecuteTable.executed_time).first()
 
             if oldest_record:
@@ -432,14 +439,15 @@ def workflow_run() -> Response:
                 user_id=user_id,
                 executed_time=datetime.now(),
                 workflow_id=workflow_id,
-                tenant_id=tenant_id
+                tenant_id=workflow_result.tenant_id
             ),
         )
         if cloud_type == SIMPLE_CLOUD:
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
                 {_WorkflowTable.execute_status: execute_status})
         elif cloud_type == PRIVATE_CLOUD:
-            db.session.query(_WorkflowTable).filter_by(id=workflow_id, tenant_id=tenant_id).update(
+            db.session.query(_WorkflowTable).filter(_WorkflowTable.id == workflow_id,
+                                                    _WorkflowTable.tenant_id.in_(tenant_ids)).update(
                 {_WorkflowTable.execute_status: execute_status})
         else:
             return jsonify({"code": 7, "msg": "不支持的云类型"})
@@ -459,6 +467,7 @@ def workflow_create() -> Response:
     config_name = data.get("configName")
     config_en_name = data.get("configENName")
     config_desc = data.get("configDesc")
+    tenant_id = data.get('tenantId')
     if ' ' in config_en_name:
         return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
     if not config_name or not config_desc:
@@ -466,14 +475,14 @@ def workflow_create() -> Response:
     # 适配私有云
     cloud_type = auth.get_cloud_type()
     user_id = auth.get_user_id()
-    tenant_id = auth.get_tenant_id()
+    tenant_ids = auth.get_tenant_ids()
 
     # 用户未输入英文名称，则自动生成，用户输入英文名称，则保存用户输入
     if config_en_name == "":
         config_en_name = utils.chinese_to_pinyin(config_name)
         workflow_results = _WorkflowTable.query.filter(
             _WorkflowTable.config_en_name.like(f"{config_en_name}%"),
-            _WorkflowTable.user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id == tenant_id
+            _WorkflowTable.user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
         ).all()
         # 查询表中同一用户下是否有重复config_en_name的记录
         if not workflow_results:
@@ -497,7 +506,8 @@ def workflow_create() -> Response:
             return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
 
 
-def create_new_workflow(user_id: str, config_name: str, config_en_name: str, config_desc: str, tenant_id: str) -> Response:
+def create_new_workflow(user_id: str, config_name: str, config_en_name: str, config_desc: str,
+                        tenant_id: str) -> Response:
     dag_content = utils.generate_workflow_schema_template()
     workflow_id = uuid.uuid4()
     try:
@@ -541,9 +551,9 @@ def workflow_delete() -> Response:
         query_filter.append(_WorkflowTable.id == workflow_id)
         query_filter.append(_WorkflowTable.user_id == user_id)
     elif cloud_type == PRIVATE_CLOUD:
-        tenant_id = auth.get_tenant_id()
+        tenant_ids = auth.get_tenant_ids()
         query_filter.append(_WorkflowTable.id == workflow_id)
-        query_filter.append(_WorkflowTable.tenant_id == tenant_id)
+        query_filter.append(_WorkflowTable.tenant_id.in_(tenant_ids))
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
@@ -575,7 +585,7 @@ def workflow_save() -> Response:
     workflow_id = data.get("workflowID")
     user_id = auth.get_user_id()
     cloud_type = auth.get_cloud_type()
-    tenant_id = auth.get_tenant_id()
+    tenant_ids = auth.get_tenant_ids()
 
     if ' ' in config_en_name:
         return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
@@ -591,7 +601,7 @@ def workflow_save() -> Response:
     elif cloud_type == PRIVATE_CLOUD:
         workflow_results = _WorkflowTable.query.filter(
             _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id == tenant_id
+            _WorkflowTable.tenant_id.in_(tenant_ids)
         ).first()
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
@@ -602,7 +612,7 @@ def workflow_save() -> Response:
     # 检查英文名称唯一性
     en_name_check = _WorkflowTable.query.filter(
         _WorkflowTable.config_en_name == config_en_name,
-        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id == tenant_id
+        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
     ).first()
 
     if en_name_check and config_en_name != workflow_results.config_en_name:
@@ -627,7 +637,10 @@ def workflow_save() -> Response:
         if cloud_type == SIMPLE_CLOUD:
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(update_data)
         else:
-            db.session.query(_WorkflowTable).filter_by(id=workflow_id, tenant_id=tenant_id).update(update_data)
+            db.session.query(_WorkflowTable).filter(
+                _WorkflowTable.id == workflow_id,
+                _WorkflowTable.tenant_id.in_(tenant_ids)
+            ).update(update_data)
 
         db.session.commit()
     except SQLAlchemyError as e:
@@ -646,7 +659,7 @@ def workflow_clone() -> Response:
     workflow_id = data.get("workflowID")
     user_id = auth.get_user_id()
     cloud_type = auth.get_cloud_type()
-    tenant_id = auth.get_tenant_id()
+    tenant_ids = auth.get_tenant_ids()
     if not workflow_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
@@ -659,7 +672,7 @@ def workflow_clone() -> Response:
     elif cloud_type == PRIVATE_CLOUD:
         workflow_config = _WorkflowTable.query.filter(
             _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id == tenant_id
+            _WorkflowTable.tenant_id.in_(tenant_ids)
         ).first()
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
@@ -671,7 +684,7 @@ def workflow_clone() -> Response:
 
     existing_config_copies = _WorkflowTable.query.filter(
         _WorkflowTable.config_en_name.like(f"{workflow_config.config_en_name}%"),
-        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id == tenant_id
+        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
     ).all()
 
     # 找出最大后缀
@@ -731,10 +744,10 @@ def workflow_get() -> tuple[Response, int] | Response:
             _WorkflowTable.user_id == user_id
         ).first()
     elif cloud_type == PRIVATE_CLOUD:
-        tenant_id = auth.get_tenant_id()
+        tenant_ids = auth.get_tenant_ids()
         workflow_config = _WorkflowTable.query.filter(
             _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id == tenant_id
+            _WorkflowTable.tenant_id.in_(tenant_ids)
         ).first()
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
@@ -769,8 +782,11 @@ def workflow_get_process() -> tuple[Response, int] | Response:
         user_id = auth.get_user_id()
         workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id, user_id=user_id).first()
     elif cloud_type == PRIVATE_CLOUD:
-        tenant_id = auth.get_tenant_id()
-        workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id, user_id=tenant_id).first()
+        tenant_ids = auth.get_tenant_ids()
+        workflow_result = _ExecuteTable.query.filter(
+            _ExecuteTable.execute_id == execute_id,
+            _ExecuteTable.tenant_id.in_(tenant_ids)
+        ).first()
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
@@ -806,10 +822,12 @@ def workflow_get_list() -> tuple[Response, int] | Response:
                 return jsonify({"code": 7, "msg": "userID is required"})
             query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
         elif cloud_type == PRIVATE_CLOUD:
-            tenant_id = auth.get_tenant_id()
-            if not tenant_id:
+            tenant_ids = auth.get_tenant_ids()
+            if len(tenant_ids) == 0:
                 return jsonify({"code": 7, "msg": "userID is required"})
-            query = db.session.query(_WorkflowTable).filter_by(tenant_id=tenant_id)
+            query = db.session.query(_WorkflowTable).filter(
+                _WorkflowTable.tenant_id.in_(tenant_ids)
+            )
         else:
             return jsonify({"code": 7, "msg": "不支持的云类型"})
 
