@@ -48,6 +48,7 @@ from agentscope.service import (
 
 from agentscope.service.web.apiservice import api_request_for_big_model
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
+from agentscope.aibigmodel_workflow.config import LLM_URL,RAG_URL
 
 try:
     import networkx as nx
@@ -2267,7 +2268,7 @@ class LLMNode(WorkflowNode):
         if origin_params_dict['settings']['model'] == 'unicom-70b-chat':
             origin_params_dict['settings'].pop('model')
 
-            origin_params_dict['settings']['url'] = 'http://192.168.2.180:8152/v1/chat/completions'
+            origin_params_dict['settings']['url'] = LLM_URL
         else:
             raise Exception(f"{origin_params_dict['settings']['model']} is not supported")
         return origin_params_dict
@@ -2535,8 +2536,7 @@ class RAGNode(WorkflowNode):
             if item['name'] == 'query':
                 item['name'] = 'question'
         # 添加知识库url地址
-        origin_params_dict['settings']['url'] = ('https://122.13.25.19:5001/openapi/tool/oimsunb59e1b94/knowledge'
-                                                 '/search-knowledge-base')
+        origin_params_dict['settings']['url'] = RAG_URL
         return origin_params_dict
 
     @staticmethod
