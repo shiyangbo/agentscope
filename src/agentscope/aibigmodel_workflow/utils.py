@@ -217,12 +217,12 @@ def generate_workflow_schema_template() -> str:
                             "name": "",
                             "type": "string",
                             "desc": "",
-                            "object_schema": None,
-                            "list_schema": None,
+                            "object_schema": "",
+                            "list_schema": "",
                             "required": "false",
                             "value": {
                                 "type": "generated",
-                                "content": None
+                                "content": ""
                             }
                         }
                     ],
@@ -239,8 +239,8 @@ def generate_workflow_schema_template() -> str:
                             "name": "",
                             "type": "string",
                             "desc": "",
-                            "object_schema": None,
-                            "list_schema": None,
+                            "object_schema": "",
+                            "list_schema": "",
                             "required": "false",
                             "value": {
                                 "type": "ref",

@@ -141,7 +141,7 @@ def plugin_publish() -> Response:
         return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
     if workflow_result.execute_status != WorkflowNodeStatus.SUCCESS:
-        return jsonify({"code": 7, "msg": "Workflow did not run successfully, unable to publish"})
+        return jsonify({"code": 7, "msg": "插件未调试成功，无法发布"})
 
     # 插件名称不允许重复
     if cloud_type == SIMPLE_CLOUD:
