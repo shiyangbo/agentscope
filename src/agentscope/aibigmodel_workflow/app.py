@@ -43,7 +43,7 @@ class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     """Execute workflow."""
     __tablename__ = "llm_execute_info"
     execute_id = db.Column(db.String(100), primary_key=True)  # 运行ID
-    execute_result = db.Column(db.Text)
+    execute_result = db.Column(db.Text(length=2 ** 32 - 1))
     user_id = db.Column(db.String(100))  # 用户ID
     executed_time = db.Column(db.DateTime)
     workflow_id = db.Column(db.String(100))  # workflowID
