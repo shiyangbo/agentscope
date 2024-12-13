@@ -253,15 +253,8 @@ def plugin_run_for_bigmodel(identifier, plugin_en_name) -> str:
         return json.dumps({"code": 7, "msg": f"input param type is {type(input_params)}, not dict"})
     logger.info(f"=== AI request: {input_params=}")
 
-    cloud_type = auth.get_cloud_type()
-
-    # 判断是 user_id 还是 tenant_id
-    if cloud_type == SIMPLE_CLOUD:
-        plugin = _PluginTable.query.filter_by(user_id=identifier, plugin_en_name=plugin_en_name).first()
-    elif cloud_type == PRIVATE_CLOUD:
-        plugin = _PluginTable.query.filter_by(tenant_id=identifier, plugin_en_name=plugin_en_name).first()
-    else:
-        return json.dumps({"code": 7, "msg": "不支持的云类型"})
+    plugin = _PluginTable.query.filter_by(user_id=identifier, plugin_en_name=plugin_en_name).first() or \
+             _PluginTable.query.filter_by(tenant_id=identifier, plugin_en_name=plugin_en_name).first()
 
     if not plugin:
         return json.dumps({"code": 7, "msg": "plugin not exists"})
