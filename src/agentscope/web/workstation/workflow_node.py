@@ -1857,8 +1857,6 @@ class PythonServiceUserTypingNode(WorkflowNode):
         self.python_code = base64.b64decode(base64_python_code).decode('utf-8')
         if self.python_code == "":
             raise Exception("python code empty")
-        if r'\n' in self.python_code:
-            raise Exception("chrome front end's python code not valid")
 
         for i, param_spec in enumerate(params_dict['outputs']):
             # param_spec 举例
@@ -2505,6 +2503,11 @@ class RAGNode(WorkflowNode):
         # 2. 使用 api_request 函数进行 API 请求设置
         self.input_params_for_body['knowledgeBase'] = self.knowledgeBase
         self.input_params_for_body['userId'] = self.userId
+
+        # 适配知识库接口
+        if 'top_k' in self.input_params_for_body:
+            self.input_params_for_body['topK'] = self.input_params_for_body.pop('top_k')
+
         response = api_request_for_big_model(url=self.api_url, method='POST', headers=self.api_header,
                                              data=self.input_params_for_body)
         logger.info(f'RAG service response {response.content}')
