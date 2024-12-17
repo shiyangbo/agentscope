@@ -29,67 +29,18 @@ from loguru import logger
 
 import agentscope.aibigmodel_workflow.utils as utils
 import agentscope.utils.jwt_auth as auth
-from agentscope.web.workstation.workflow_dag import build_dag
+import service
+import database
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.utils.tools import _is_windows
 from agentscope.utils.jwt_auth import SIMPLE_CLOUD, PRIVATE_CLOUD
+from agentscope.web.workstation.workflow_dag import build_dag
 
 from flask import Flask, request, jsonify, g
 
 from config import app, db, socketio, SERVICE_URL, SERVER_PORT
 
-
-class _ExecuteTable(db.Model):  # type: ignore[name-defined]
-    """Execute workflow."""
-    __tablename__ = "llm_execute_info"
-    execute_id = db.Column(db.String(100), primary_key=True)  # 运行ID
-    execute_result = db.Column(db.Text(length=2 ** 32 - 1))
-    user_id = db.Column(db.String(100))  # 用户ID
-    executed_time = db.Column(db.DateTime)
-    workflow_id = db.Column(db.String(100))  # workflowID
-    tenant_id = db.Column(db.String(100))  # TenantID
-
-
-class _WorkflowTable(db.Model):  # type: ignore[name-defined]
-    """Workflow store table."""
-    __tablename__ = "llm_workflow_info"
-    id = db.Column(db.String(100), primary_key=True)  # workflowID
-    user_id = db.Column(db.String(100))  # 用户ID
-    config_name = db.Column(db.String(100))
-    config_en_name = db.Column(db.String(100))
-    config_desc = db.Column(db.Text)
-    dag_content = db.Column(db.Text, default='{}')
-    status = db.Column(db.String(10))
-    updated_time = db.Column(db.DateTime)
-    execute_status = db.Column(db.String(10))
-    tenant_id = db.Column(db.String(100))  # TenantID
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'userID': self.user_id,
-            'configName': self.config_name,
-            'configENName': self.config_en_name,
-            'configDesc': self.config_desc,
-            'status': self.status,
-            'updatedTime': self.updated_time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-
-
-class _PluginTable(db.Model):  # type: ignore[name-defined]
-    """Plugin table."""
-    __tablename__ = "llm_plugin_info"
-    id = db.Column(db.String(100), primary_key=True)  # ID
-    user_id = db.Column(db.String(100))  # 用户ID
-    plugin_name = db.Column(db.String(100))  # 插件名称
-    plugin_en_name = db.Column(db.String(100))  # 插件英文名称
-    plugin_desc = db.Column(db.Text)  # 插件描述
-    dag_content = db.Column(db.Text)  # 插件dag配置文件
-    plugin_field = db.Column(db.String(100))  # 插件领域
-    plugin_desc_config = db.Column(db.Text)  # 插件描述配置文件
-    published_time = db.Column(db.DateTime)  # 插件发布时间
-    tenant_id = db.Column(db.String(100))  # TenantID
-
+from service import _ExecuteTable, _WorkflowTable, _PluginTable
 
 # 定义不需要 JWT 验证的公开路由
 PUBLIC_ENDPOINTS = [
@@ -134,9 +85,9 @@ def plugin_publish() -> Response:
     tenant_ids = auth.get_tenant_ids()
     cloud_type = auth.get_cloud_type()
     # 查询workflow_info表获取插件信息
-    workflow_result = _WorkflowTable.query.filter(
-        _WorkflowTable.id == workflow_id
-    ).first()
+    workflow_result = database.fetch_records_by_filters(_WorkflowTable,
+                                                        id=workflow_id)
+
     if not workflow_result:
         return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
@@ -145,65 +96,26 @@ def plugin_publish() -> Response:
 
     # 插件名称不允许重复
     if cloud_type == SIMPLE_CLOUD:
-        plugin = _PluginTable.query.filter(
-            _PluginTable.user_id == user_id,
-            _PluginTable.plugin_en_name == workflow_result.config_en_name,
-        ).all()
+        plugin = database.fetch_records_by_filters(_PluginTable,
+                                                   method='all',
+                                                   user_id=user_id,
+                                                   plugin_en_name=workflow_result.config_en_name)
     elif cloud_type == PRIVATE_CLOUD:
-        plugin = _PluginTable.query.filter(
-            _PluginTable.tenant_id.in_(tenant_ids),
-            _PluginTable.plugin_en_name == workflow_result.config_en_name,
-        ).all()
+        plugin = database.fetch_records_by_filters(_PluginTable,
+                                                   method='all',
+                                                   tenant_id__in=tenant_ids,
+                                                   plugin_en_name=workflow_result.config_en_name)
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
-    # 插件描述信息生成，对接智能体格式
-    dag_content = json.loads(workflow_result.dag_content)
-
-    data = {
-        "pluginName": workflow_result.config_name,
-        "pluginDesc": workflow_result.config_desc,
-        "pluginENName": workflow_result.config_en_name,
-        "pluginField": plugin_field,
-        "pluginDescription": description,
-        "pluginSpec": dag_content,
-        "identifier": user_id if auth.get_cloud_type() == SIMPLE_CLOUD else workflow_result.tenant_id,
-        "serviceURL": SERVICE_URL
-    }
-
     # 插件的英文名称唯一
     if len(plugin) > 0:
-        return jsonify({"code": 7, "msg": f"Multiple records found for plugin en name: {data['pluginENName']}"})
+        return jsonify(
+            {"code": 7, "msg": f"Multiple records found for plugin en name: {workflow_result.config_en_name}"})
 
-    try:
-        openapi_schema = utils.plugin_desc_config_generator(data)
-        openapi_schema_json_str = json.dumps(openapi_schema)
+    result = service.plugin_publish(workflow_id, user_id, workflow_result, plugin_field, description)
 
-        db.session.add(
-            _PluginTable(
-                id=workflow_id,
-                user_id=user_id,
-                plugin_name=workflow_result.config_name,
-                plugin_en_name=workflow_result.config_en_name,
-                plugin_desc=workflow_result.config_desc,
-                dag_content=workflow_result.dag_content,
-                plugin_field=data["pluginField"],
-                plugin_desc_config=openapi_schema_json_str,
-                published_time=datetime.now(),
-                tenant_id=workflow_result.tenant_id
-            ),
-        )
-        db.session.query(_WorkflowTable).filter_by(id=workflow_id).update(
-            {_WorkflowTable.status: utils.WorkflowStatus.WORKFLOW_PUBLISHED})
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 7, "msg": str(e)})
-    except Exception as e:
-        logger.error(f"plugin_publish failed: {e}")
-        return jsonify({"code": 7, "msg": str(e)})
-
-    return jsonify({"code": 0, "msg": "Workflow file published successfully"})
+    return result
 
 
 @app.route("/workflow/openapi_schema", methods=["GET"])
@@ -225,9 +137,9 @@ def plugin_openapi_schema() -> tuple[Response, int] | Response:
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
-    plugin = _PluginTable.query.filter(
-        _PluginTable.id == workflow_id,
-    ).first()
+    plugin = database.fetch_records_by_filters(_PluginTable,
+                                               id=workflow_id)
+
     if not plugin:
         return jsonify({"code": 7, "msg": f"plugin: {workflow_id} not found"})
 
@@ -244,6 +156,7 @@ def plugin_run_for_bigmodel(identifier, plugin_en_name) -> str:
     """
     Input query data and get response.
     """
+    logger.info(f"===成功调用插件API {plugin_en_name}=====")
     if plugin_en_name == "":
         return json.dumps({"code": 7, "msg": "plugin_en_name empty"})
 
@@ -253,44 +166,22 @@ def plugin_run_for_bigmodel(identifier, plugin_en_name) -> str:
         return json.dumps({"code": 7, "msg": f"input param type is {type(input_params)}, not dict"})
     logger.info(f"=== AI request: {input_params=}")
 
-    plugin = _PluginTable.query.filter_by(user_id=identifier, plugin_en_name=plugin_en_name).first() or \
-             _PluginTable.query.filter_by(tenant_id=identifier, plugin_en_name=plugin_en_name).first()
+    plugin = database.fetch_records_by_filters(
+        table=_PluginTable,
+        tenant_id=identifier,
+        plugin_en_name=plugin_en_name
+    ) or database.fetch_records_by_filters(
+        table=_PluginTable,
+        user_id=identifier,
+        plugin_en_name=plugin_en_name
+    )
 
     if not plugin:
         return json.dumps({"code": 7, "msg": "plugin not exists"})
 
-    try:
-        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-        config = json.loads(plugin.dag_content)
-        converted_config = utils.workflow_format_convert(config)
-        dag = build_dag(converted_config)
-    except Exception as e:
-        logger.error(f"plugin_run_for_bigmodel failed: {repr(e)}")
-        return json.dumps({"code": 7, "msg": repr(e)})
+    result = service.plugin_run_for_bigmodel(plugin, input_params, plugin_en_name)
 
-    # 调用运行dag
-    start_time = time.time()
-    result, nodes_result = dag.run_with_param(input_params, config)
-    # 检查是否如期运行
-    for node_dict in nodes_result:
-        node_status = node_dict['node_status']
-        if node_status == WorkflowNodeStatus.FAILED:
-            node_message = node_dict['node_message']
-            return json.dumps({"code": 7, "msg": node_message})
-
-    end_time = time.time()
-    executed_time = round(end_time - start_time, 3)
-    # 获取workflow与各节点的执行结果
-    execute_status = WorkflowNodeStatus.SUCCESS if all(
-        node.get('node_status') in [WorkflowNodeStatus.SUCCESS, WorkflowNodeStatus.RUNNING_SKIP]
-        for node in nodes_result) else WorkflowNodeStatus.FAILED
-    execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
-    if not execute_result:
-        return json.dumps({"code": 7, "msg": "execute result not exists"})
-
-    # 大模型调用时，不需要增加数据库流水记录
-    logger.info(f"=== AI request: {plugin_en_name=}, result: {result}, execute_result: {execute_result}")
-    return json.dumps(result, ensure_ascii=False)
+    return result
 
 
 @app.route("/node/run_api", methods=["POST"])
@@ -371,86 +262,18 @@ def workflow_run() -> Response:
     workflow_id = request.json.get("workflowID")
     if workflow_id == "":
         return jsonify({"code": 7, "msg": f"workflowID is Null"})
-    user_id = auth.get_user_id()
-    tenant_ids = auth.get_tenant_ids()
-    cloud_type = auth.get_cloud_type()
     logger.info(f"workflow_schema: {workflow_schema}")
 
     # 查询workflow_info表获取插件信息
-    workflow_result = _WorkflowTable.query.filter(
-        _WorkflowTable.id == workflow_id
-    ).first()
+    workflow_result = database.fetch_records_by_filters(_WorkflowTable,
+                                                        id=workflow_id)
     if not workflow_result:
         return jsonify({"code": 7, "msg": "No workflow config data exists"})
 
-    try:
-        # 存入数据库的数据为前端格式，需要转换为后端可识别格式
-        converted_config = utils.workflow_format_convert(workflow_schema)
-        logger.info(f"config: {converted_config}")
-        dag = build_dag(converted_config)
-    except Exception as e:
-        logger.error(f"workflow_run failed: {repr(e)}")
-        return jsonify({"code": 7, "msg": repr(e)})
+    # 保存更新workflow记录与workflow运行记录
+    result = service.workflow_run(workflow_id, workflow_result, workflow_schema, content)
 
-    start_time = time.time()
-    result, nodes_result = dag.run_with_param(content, workflow_schema)
-    end_time = time.time()
-    executed_time = round(end_time - start_time, 3)
-    # 获取workflow与各节点的执行结果
-    execute_status = WorkflowNodeStatus.SUCCESS if all(
-        node.get('node_status') in [WorkflowNodeStatus.SUCCESS, WorkflowNodeStatus.RUNNING_SKIP]
-        for node in nodes_result) else WorkflowNodeStatus.FAILED
-    execute_result = utils.get_workflow_running_result(nodes_result, dag.uuid, execute_status, str(executed_time))
-    # 需要持久化
-    logger.info(f"execute_result: {execute_result}")
-    execute_result = json.dumps(execute_result)
-    if not execute_result:
-        return jsonify({"code": 7, "msg": "execute result not exists"})
-    # 数据库存储
-    try:
-        # 限制一个用户执行记录为500次，超过500次删除最旧的记录
-        query = db.session.query(_ExecuteTable).filter_by(user_id=user_id)
-        # 获取符合user_id条件的所有记录数
-        count = query.count()
-
-        if count > 500:
-            if auth.get_cloud_type() == SIMPLE_CLOUD:
-                oldest_record = db.session.query(_ExecuteTable).filter_by(user_id=user_id).order_by(
-                    _ExecuteTable.executed_time).first()
-            else:
-                oldest_record = db.session.query(_ExecuteTable).filter(
-                    _ExecuteTable.tenant_id.in_(tenant_ids)).order_by(
-                    _ExecuteTable.executed_time).first()
-
-            if oldest_record:
-                db.session.delete(oldest_record)
-
-        db.session.add(
-            _ExecuteTable(
-                execute_id=dag.uuid,
-                execute_result=execute_result,
-                user_id=user_id,
-                executed_time=datetime.now(),
-                workflow_id=workflow_id,
-                tenant_id=workflow_result.tenant_id
-            ),
-        )
-        if cloud_type == SIMPLE_CLOUD:
-            db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(
-                {_WorkflowTable.execute_status: execute_status})
-        elif cloud_type == PRIVATE_CLOUD:
-            db.session.query(_WorkflowTable).filter(_WorkflowTable.id == workflow_id,
-                                                    _WorkflowTable.tenant_id.in_(tenant_ids)).update(
-                {_WorkflowTable.execute_status: execute_status})
-        else:
-            return jsonify({"code": 7, "msg": "不支持的云类型"})
-
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 7, "msg": str(e)})
-
-    return jsonify(code=0, data=result, executeID=dag.uuid)
+    return result
 
 
 @app.route("/workflow/create", methods=["POST"])
@@ -475,7 +298,7 @@ def workflow_create() -> Response:
         config_en_name = utils.chinese_to_pinyin(config_name)
         workflow_results = _WorkflowTable.query.filter(
             _WorkflowTable.config_en_name.like(f"{config_en_name}%"),
-            _WorkflowTable.user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
+            _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
         ).all()
         # 查询表中同一用户下是否有重复config_en_name的记录
         if not workflow_results:
