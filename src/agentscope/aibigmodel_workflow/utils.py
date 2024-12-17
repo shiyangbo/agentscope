@@ -191,9 +191,11 @@ def plugin_desc_config_generator(data: dict) -> dict:
         param_name = param['name']
         param_type = param['type']
         param_desc = param['desc']
+        param_required = param['required']
 
         # 简单起见，这里只考虑普通变量，不考虑嵌套类型变量，例如object和array
-        request_schema['required'].append(param_name)
+        if param_required == 'true':
+            request_schema['required'].append(param_name)
         request_schema['properties'][param_name] = {
             "type": param_type,
             "description": param_desc
