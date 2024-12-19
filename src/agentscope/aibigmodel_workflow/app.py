@@ -298,7 +298,8 @@ def workflow_create() -> Response:
         config_en_name = utils.chinese_to_pinyin(config_name)
         workflow_results = _WorkflowTable.query.filter(
             _WorkflowTable.config_en_name.like(f"{config_en_name}%"),
-            _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
+            _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(
+                tenant_ids)
         ).all()
         # 查询表中同一用户下是否有重复config_en_name的记录
         if not workflow_results:
@@ -459,11 +460,14 @@ def workflow_get() -> tuple[Response, int] | Response:
     if cloud_type == SIMPLE_CLOUD:
         user_id = auth.get_user_id()
         workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                            method='first',
                                                             id=workflow_id,
                                                             user_id=user_id)
+
     elif cloud_type == PRIVATE_CLOUD:
         tenant_ids = auth.get_tenant_ids()
         workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                            method='first',
                                                             id=workflow_id,
                                                             tenant_id__in=tenant_ids)
     else:
@@ -497,13 +501,16 @@ def workflow_get_process() -> tuple[Response, int] | Response:
     cloud_type = auth.get_cloud_type()
     if cloud_type == SIMPLE_CLOUD:
         user_id = auth.get_user_id()
-        workflow_result = _ExecuteTable.query.filter_by(execute_id=execute_id, user_id=user_id).first()
+        workflow_result = database.fetch_records_by_filters(_ExecuteTable,
+                                                            method='first',
+                                                            execute_id=execute_id,
+                                                            user_id=user_id)
     elif cloud_type == PRIVATE_CLOUD:
         tenant_ids = auth.get_tenant_ids()
-        workflow_result = _ExecuteTable.query.filter(
-            _ExecuteTable.execute_id == execute_id,
-            _ExecuteTable.tenant_id.in_(tenant_ids)
-        ).first()
+        workflow_result = database.fetch_records_by_filters(_ExecuteTable,
+                                                            method='first',
+                                                            execute_id=execute_id,
+                                                            tenant_id__in=tenant_ids)
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
@@ -532,41 +539,9 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     keyword = request.args.get('keyword', default='')
     status = request.args.get('status', default='')
 
-    try:
-        if cloud_type == SIMPLE_CLOUD:
-            user_id = auth.get_user_id()
-            if not user_id:
-                return jsonify({"code": 7, "msg": "userID is required"})
-            query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
-        elif cloud_type == PRIVATE_CLOUD:
-            tenant_ids = auth.get_tenant_ids()
-            if len(tenant_ids) == 0:
-                return jsonify({"code": 7, "msg": "userID is required"})
-            query = db.session.query(_WorkflowTable).filter(
-                _WorkflowTable.tenant_id.in_(tenant_ids)
-            )
-        else:
-            return jsonify({"code": 7, "msg": "不支持的云类型"})
+    result = service.get_workflow_list(cloud_type, keyword, status, page, limit)
 
-        if keyword:
-            query = query.filter(_WorkflowTable.config_name.contains(keyword) |
-                                 _WorkflowTable.config_en_name.contains(keyword))
-        if status:
-            query = query.filter_by(status=status)
-
-        # 获取符合user_id条件的所有记录数
-        total = query.count()
-
-        # 分页查询
-        workflows = query.order_by(_WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
-
-        workflows_list = [workflow.to_dict() for workflow in workflows]
-        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": total}
-        return jsonify({"code": 0, "data": data})
-    except SQLAlchemyError as e:
-        app.logger.error(f"Error occurred while fetching workflow list: {e}")
-        return jsonify({"code": 5000, "msg": "Error occurred while fetching workflow list."})
-
+    return result
 
 def init(
         host: str = "0.0.0.0",
