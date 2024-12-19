@@ -103,7 +103,7 @@ def workflow_run(workflow_id, workflow_result, workflow_schema, content):
     try:
         # 限制一个用户执行记录为500次，超过500次删除最旧的记录
         query = db.session.query(_ExecuteTable).filter_by(user_id=user_id if user_id == 'SIMPLE_CLOUD' else
-                                                          _ExecuteTable.tenant_id.in_(tenant_ids))
+        _ExecuteTable.tenant_id.in_(tenant_ids))
 
         if query.count() > 500:
             oldest_record = db.session.query(_ExecuteTable).filter_by(user_id=user_id).order_by(
@@ -167,3 +167,40 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
     # 大模型调用时，不需要增加数据库流水记录
     logger.info(f"=== AI request: {plugin_en_name=}, result: {result}, execute_result: {execute_result}")
     return json.dumps(result, ensure_ascii=False)
+
+
+def get_workflow_list(cloud_type, keyword=None, status=None, page=1, limit=10):
+    try:
+        if cloud_type == SIMPLE_CLOUD:
+            user_id = auth.get_user_id()
+            if not user_id:
+                return jsonify({"code": 7, "msg": "userID is required"})
+            query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
+        elif cloud_type == PRIVATE_CLOUD:
+            tenant_ids = auth.get_tenant_ids()
+            if len(tenant_ids) == 0:
+                return jsonify({"code": 7, "msg": "tenant_ids is required"})
+            query = db.session.query(_WorkflowTable).filter(
+                _WorkflowTable.tenant_id.in_(tenant_ids)
+            )
+        else:
+            return jsonify({"code": 7, "msg": "不支持的云类型"})
+
+        if keyword:
+            query = query.filter(_WorkflowTable.config_name.contains(keyword) |
+                                 _WorkflowTable.config_en_name.contains(keyword))
+        if status:
+            query = query.filter_by(status=status)
+
+        # 获取符合user_id条件的所有记录数
+        total = query.count()
+
+        # 分页查询
+        workflows = query.order_by(_WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
+
+        workflows_list = [workflow.to_dict() for workflow in workflows]
+        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": total}
+        return jsonify({"code": 0, "data": data})
+    except SQLAlchemyError as e:
+        logger.error(f"Error occurred while fetching workflow list: {e}")
+        return jsonify({"code": 5000, "msg": "Error occurred while fetching workflow list."})
