@@ -408,22 +408,7 @@ def workflow_save() -> Response:
     if not workflow_id or not user_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
-    # 查询条件
-    if cloud_type == SIMPLE_CLOUD:
-        workflow_results = database.fetch_records_by_filters(_WorkflowTable,
-                                                             id=workflow_id,
-                                                             user_id=user_id)
-    elif cloud_type == PRIVATE_CLOUD:
-        workflow_results = database.fetch_records_by_filters(_WorkflowTable,
-                                                             id=workflow_id,
-                                                             tenant_id__in=tenant_ids)
-    else:
-        return jsonify({"code": 7, "msg": "不支持的云类型"})
-
-    if not workflow_results:
-        return jsonify({"code": 5000, "msg": "Internal Server Error"})
-
-    result = service.workflow_save(workflow_id, user_id)
+    result = service.workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id, tenant_ids)
     return result
 
 

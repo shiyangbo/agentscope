@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import jsonify
 from sqlalchemy.exc import SQLAlchemyError
 from loguru import logger
+import database
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.utils.jwt_auth import SIMPLE_CLOUD, PRIVATE_CLOUD
 from agentscope.web.workstation.workflow_dag import build_dag
@@ -171,11 +172,18 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
 
 def workflow_clone(workflow_config, user_id, tenant_ids):
     # 查询相同英文名称的工作流配置，并为新副本生成唯一的名称
-    existing_config_copies = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name.like(f"{workflow_config.config_en_name}%"),
-        _WorkflowTable.user_id == user_id if auth.get_cloud_type() == SIMPLE_CLOUD else _WorkflowTable.tenant_id
-        .in_(tenant_ids)).all()
-
+    if auth.get_cloud_type() == SIMPLE_CLOUD:
+        existing_config_copies = database.fetch_records_by_filters(_WorkflowTable,
+                                                                   method='all',
+                                                                   config_en_name=workflow_config.config_en_name,
+                                                                   user_id=user_id)
+    elif auth.get_cloud_type() == PRIVATE_CLOUD:
+        existing_config_copies = database.fetch_records_by_filters(_WorkflowTable,
+                                                                   method='all',
+                                                                   config_en_name=workflow_config.config_en_name,
+                                                                   tenant_id__in=tenant_ids)
+    else:
+        return jsonify({"code": 7, "msg": "不支持的云类型"})
     # 找出最大后缀
     name_suffix = utils.add_max_suffix(workflow_config.config_en_name, existing_config_copies)
     # 生成新的配置名称和状态
@@ -215,13 +223,33 @@ def workflow_clone(workflow_config, user_id, tenant_ids):
     return jsonify(response_data)
 
 
-def workflow_save(workflow_id, user_id):
-    # 检查英文名称唯一性
-    en_name_check = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name == config_en_name,
-        _WorkflowTable.user_id == user_id if auth.get_cloud_type() == SIMPLE_CLOUD else _WorkflowTable.tenant_id
-        .in_(tenant_ids)).first()
+def workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id, tenant_ids):
+    # 查询条件
+    if auth.get_cloud_type() == SIMPLE_CLOUD:
+        workflow_results = database.fetch_records_by_filters(_WorkflowTable,
+                                                             id=workflow_id,
+                                                             user_id=user_id)
+    elif auth.get_cloud_type() == PRIVATE_CLOUD:
+        workflow_results = database.fetch_records_by_filters(_WorkflowTable,
+                                                             id=workflow_id,
+                                                             tenant_id__in=tenant_ids)
+    else:
+        return jsonify({"code": 7, "msg": "不支持的云类型"})
 
+    if not workflow_results:
+        return jsonify({"code": 5000, "msg": "Internal Server Error"})
+
+    if auth.get_cloud_type() == SIMPLE_CLOUD:
+        # 检查英文名称唯一性
+        en_name_check = database.fetch_records_by_filters(_WorkflowTable,
+                                                          config_en_name=config_en_name,
+                                                          user_id=user_id)
+    elif auth.get_cloud_type() == PRIVATE_CLOUD:
+        en_name_check = database.fetch_records_by_filters(_WorkflowTable,
+                                                          config_en_name=config_en_name,
+                                                          tenant_id__in=tenant_ids)
+    else:
+        return jsonify({"code": 7, "msg": "不支持的云类型"})
     if en_name_check and config_en_name != workflow_results.config_en_name:
         return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
 
@@ -255,4 +283,6 @@ def workflow_save(workflow_id, user_id):
         return jsonify({"code": 5000, "msg": str(e)})
 
     return jsonify({"code": 0, "data": {"workflowID": str(workflow_id)}, "msg": "Workflow file saved successfully"})
+
+def workflow_create(workflow_config, user_id, tenant_ids):
 
