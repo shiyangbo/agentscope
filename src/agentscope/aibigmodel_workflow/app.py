@@ -409,62 +409,8 @@ def workflow_save() -> Response:
     if not workflow_id or not user_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
-    # 查询条件
-    if cloud_type == SIMPLE_CLOUD:
-        workflow_results = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.user_id == user_id
-        ).first()
-    elif cloud_type == PRIVATE_CLOUD:
-        workflow_results = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id.in_(tenant_ids)
-        ).first()
-    else:
-        return jsonify({"code": 7, "msg": "不支持的云类型"})
-
-    if not workflow_results:
-        return jsonify({"code": 5000, "msg": "Internal Server Error"})
-
-    # 检查英文名称唯一性
-    en_name_check = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name == config_en_name,
-        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
-    ).first()
-
-    if en_name_check and config_en_name != workflow_results.config_en_name:
-        return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
-
-    try:
-        workflow = json.dumps(workflow_dict)
-        # 防御性措施
-        if len(workflow_dict['nodes']) == 0 or workflow_dict['nodes'] == [{}]:
-            workflow = utils.generate_workflow_schema_template()
-
-        # 更新逻辑
-        update_data = {
-            _WorkflowTable.config_name: config_name,
-            _WorkflowTable.config_en_name: config_en_name,
-            _WorkflowTable.config_desc: config_desc,
-            _WorkflowTable.dag_content: workflow,
-            _WorkflowTable.updated_time: datetime.now(),
-            _WorkflowTable.execute_status: ""
-        }
-
-        if cloud_type == SIMPLE_CLOUD:
-            db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(update_data)
-        else:
-            db.session.query(_WorkflowTable).filter(
-                _WorkflowTable.id == workflow_id,
-                _WorkflowTable.tenant_id.in_(tenant_ids)
-            ).update(update_data)
-
-        db.session.commit()
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 5000, "msg": str(e)})
-
-    return jsonify({"code": 0, "data": {"workflowID": str(workflow_id)}, "msg": "Workflow file saved successfully"})
+    result = service.workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id, tenant_ids)
+    return result
 
 
 @app.route("/workflow/clone", methods=["POST"])
@@ -482,66 +428,23 @@ def workflow_clone() -> Response:
 
     # 查找工作流配置
     if cloud_type == SIMPLE_CLOUD:
-        workflow_config = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.user_id == user_id
-        ).first()
+        workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                            id=workflow_id,
+                                                            user_id=user_id)
     elif cloud_type == PRIVATE_CLOUD:
-        workflow_config = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id.in_(tenant_ids)
-        ).first()
+        workflow_config = database.fetch_records_by_filters(
+            _WorkflowTable,
+            id=workflow_id,
+            tenant_id__in=tenant_ids)
+
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 
     if not workflow_config:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
-
-    # 查询相同名称的工作流配置，并为新副本生成唯一的名称
-
-    existing_config_copies = _WorkflowTable.query.filter(
-        _WorkflowTable.config_en_name.like(f"{workflow_config.config_en_name}%"),
-        _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(tenant_ids)
-    ).all()
-
-    # 找出最大后缀
-    name_suffix = utils.add_max_suffix(workflow_config.config_en_name, existing_config_copies)
-    # 生成新的配置名称和状态
-    new_config_name = f"{workflow_config.config_name}_副本{name_suffix}"
-    new_config_en_name = f"{workflow_config.config_en_name}_{name_suffix}"
-    try:
-        # 生成新的工作流 ID
-        new_workflow_id = uuid.uuid4()
-        # 创建新工作流记录
-        new_workflow = _WorkflowTable(
-            id=str(new_workflow_id),
-            user_id=workflow_config.user_id,
-            config_name=new_config_name,
-            config_en_name=new_config_en_name,
-            config_desc=workflow_config.config_desc,
-            dag_content=workflow_config.dag_content,
-            status=utils.WorkflowStatus.WORKFLOW_DRAFT,
-            updated_time=datetime.now(),
-            tenant_id=workflow_config.tenant_id
-        )
-        db.session.add(new_workflow)
-        db.session.commit()
-
-        # 返回新创建的工作流信息
-        response_data = {
-            "code": 0,
-            "data": {"workflow_id": new_workflow.id},
-            "msg": "Workflow cloned successfully"
-        }
-        return jsonify(response_data)
-
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"code": 5000, "message": str(e)})
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"workflow_clone failed: {e}")
-        return jsonify({"code": 7, "message": str(e)})
+    # 拆分到service
+    result = service.workflow_clone(workflow_config, user_id, tenant_ids)
+    return result
 
 
 @app.route("/workflow/get", methods=["GET"])
