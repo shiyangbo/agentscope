@@ -457,7 +457,7 @@ def workflow_clone() -> Response:
     if not workflow_config:
         return jsonify({"code": 7, "msg": "workflow_config does not exist"})
     # 拆分到service
-    result = service.workflow_clone(workflow_config, user_id)
+    result = service.workflow_clone(workflow_config, user_id, tenant_ids)
     return result
 
 
@@ -473,16 +473,14 @@ def workflow_get() -> tuple[Response, int] | Response:
 
     if cloud_type == SIMPLE_CLOUD:
         user_id = auth.get_user_id()
-        workflow_config = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.user_id == user_id
-        ).first()
+        workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                            id=workflow_id,
+                                                            user_id=user_id)
     elif cloud_type == PRIVATE_CLOUD:
         tenant_ids = auth.get_tenant_ids()
-        workflow_config = _WorkflowTable.query.filter(
-            _WorkflowTable.id == workflow_id,
-            _WorkflowTable.tenant_id.in_(tenant_ids)
-        ).first()
+        workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                            id=workflow_id,
+                                                            tenant_id__in=tenant_ids)
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
 

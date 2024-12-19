@@ -169,7 +169,7 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
     return json.dumps(result, ensure_ascii=False)
 
 
-def workflow_clone(workflow_config, user_id):
+def workflow_clone(workflow_config, user_id, tenant_ids):
     # 查询相同英文名称的工作流配置，并为新副本生成唯一的名称
     existing_config_copies = _WorkflowTable.query.filter(
         _WorkflowTable.config_en_name.like(f"{workflow_config.config_en_name}%"),
