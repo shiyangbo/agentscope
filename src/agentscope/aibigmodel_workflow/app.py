@@ -401,7 +401,6 @@ def workflow_save() -> Response:
     workflow_dict = data.get("workflowSchema")
     workflow_id = data.get("workflowID")
     user_id = auth.get_user_id()
-    cloud_type = auth.get_cloud_type()
     tenant_ids = auth.get_tenant_ids()
 
     if ' ' in config_en_name:
@@ -409,7 +408,8 @@ def workflow_save() -> Response:
     if not workflow_id or not user_id:
         return jsonify({"code": 7, "msg": "workflowID is required"})
 
-    result = service.workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id, tenant_ids)
+    result = service.workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id,
+                                   tenant_ids)
     return result
 
 
