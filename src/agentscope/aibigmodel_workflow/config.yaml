@@ -9,6 +9,9 @@
 
  SERVICE_URL: 'http://106.74.31.170:5003/plugin/api'
  RAG_URL: 'https://122.13.25.19:5001/openapi/tool/oimsunb59e1b94/knowledge/search-knowledge-base'
- LLM_URL: 'http://192.168.2.180:8152/v1/chat/completions'
+ LLM_URL: 'http://192.168.2.180:8001/llmproxy/api/v1/unicom/unicom-70b-chat'
+ LLM_TOKEN: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjczMWE1ZmVlLTBhYjctNDQzMS1iMGQzLWY2ODA3ZmJhNWFlNSIsInVzZXJuY
+ W1lIjoiYWRtaW4iLCJuaWNrbmFtZSI6ImFkbWluIiwidXNlclR5cGUiOjAsImlzcyI6IjczMWE1ZmVlLTBhYjctNDQzMS1iMGQzLWY2ODA3ZmJhNWFlNSIs
+ Imp0aSI6IjI2N2U4YzUyZTAwYTRkYjY5YThkMDk3MGY4ZmZkNTc5In0.1e90e412D8TiX0GM1Lx0t8KxiaFuGlD6VISUayRczTA'
 
  SERVER_PORT: '6672'
