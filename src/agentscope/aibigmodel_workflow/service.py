@@ -213,12 +213,12 @@ def workflow_clone(workflow_config, user_id, tenant_ids):
     if auth.get_cloud_type() == SIMPLE_CLOUD:
         existing_config_copies = database.fetch_records_by_filters(_WorkflowTable,
                                                                    method='all',
-                                                                   config_en_name=workflow_config.config_en_name,
+                                                                   config_en_name__like=f"{workflow_config.config_en_name}%",
                                                                    user_id=user_id)
     elif auth.get_cloud_type() == PRIVATE_CLOUD:
         existing_config_copies = database.fetch_records_by_filters(_WorkflowTable,
                                                                    method='all',
-                                                                   config_en_name=workflow_config.config_en_name,
+                                                                   config_en_name__like=f"{workflow_config.config_en_name}%",
                                                                    tenant_id__in=tenant_ids)
     else:
         return jsonify({"code": 7, "msg": "不支持的云类型"})
