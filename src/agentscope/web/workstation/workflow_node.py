@@ -48,7 +48,7 @@ from agentscope.service import (
 
 from agentscope.service.web.apiservice import api_request_for_big_model
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
-from agentscope.aibigmodel_workflow.config import LLM_URL,RAG_URL
+from agentscope.aibigmodel_workflow.config import LLM_URL, RAG_URL, LLM_TOKEN
 
 try:
     import networkx as nx
@@ -679,7 +679,6 @@ class WorkflowNodeType(IntEnum):
     LLM = 10
     SWITCH = 11
     RAG = 12
-
 
 
 class WorkflowNode(ABC):
@@ -2154,6 +2153,10 @@ class LLMNode(WorkflowNode):
         self.api_header = params_dict['settings']['headers']
         if not isinstance(self.api_header, dict):
             raise Exception(f"header:{self.api_header} type is not dict")
+
+        self.api_header = {
+            "Authorization": f"Bearer {LLM_TOKEN}"
+        }
 
         for i, param_spec in enumerate(params_dict['inputs']):
             param_spec.setdefault('extra', {})
