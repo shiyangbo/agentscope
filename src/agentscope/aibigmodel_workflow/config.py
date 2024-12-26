@@ -6,7 +6,6 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_cors import CORS
-from typing import Tuple, Union, Optional
 
 sys.path.append('/agentscope/src')
 
@@ -42,6 +41,7 @@ else:
     SERVICE_URL = config['SERVICE_URL']
     RAG_URL = config['RAG_URL']
     LLM_URL = config['LLM_URL']
+    LLM_TOKEN = config['LLM_TOKEN']
     SERVER_PORT = config['SERVER_PORT']
 
     SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, DRIVER, USERNAME, PASSWORD, HOST,

@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 
 import agentscope.aibigmodel_workflow.utils as utils
 import agentscope.utils.jwt_auth as auth
@@ -306,7 +307,7 @@ def workflow_save(workflow_id, config_name, config_en_name, config_desc, workflo
             _WorkflowTable.execute_status: ""
         }
 
-        if cloud_type == SIMPLE_CLOUD:
+        if auth.get_cloud_type() == SIMPLE_CLOUD:
             db.session.query(_WorkflowTable).filter_by(id=workflow_id, user_id=user_id).update(update_data)
         else:
             db.session.query(_WorkflowTable).filter(
