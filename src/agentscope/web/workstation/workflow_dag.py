@@ -61,7 +61,7 @@ def sanitize_node_data(raw_info: dict) -> dict:
     return raw_info
 
 
-def build_dag(config: dict) -> ASDiGraph:
+def build_dag(config: dict, workflow_id: str, plugin_id: str) -> ASDiGraph:
     """
     Construct a Directed Acyclic Graph (DAG) from the provided configuration.
 
@@ -78,7 +78,7 @@ def build_dag(config: dict) -> ASDiGraph:
     Raises:
         ValueError: If the resulting graph is not acyclic.
     """
-    dag = ASDiGraph(**{'uuid': str(uuid.uuid4())})
+    dag = ASDiGraph(**{'uuid': str(uuid.uuid4()),'workflow_id': workflow_id, 'plugin_id': plugin_id})
 
     dag.config = config
     dag.save("./test_save.json")

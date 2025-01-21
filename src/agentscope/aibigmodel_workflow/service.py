@@ -63,11 +63,11 @@ def plugin_publish(workflow_id, user_id, workflow_result, plugin_field, descript
     return jsonify({"code": 0, "msg": "Workflow file published successfully"})
 
 
-def build_and_run_dag(workflow_schema, content):
+def build_and_run_dag(workflow_schema, content, workflow_id):
     try:
         converted_config = utils.workflow_format_convert(workflow_schema)
         logger.info(f"config: {converted_config}")
-        dag = build_dag(converted_config)
+        dag = build_dag(converted_config, workflow_id, '')
     except Exception as e:
         logger.error(f"Workflow_run failed: {repr(e)}")
         return None, None, None, WorkflowNodeStatus.FAILED
@@ -98,7 +98,7 @@ def workflow_run(workflow_id, workflow_result, workflow_schema, content):
     cloud_type = auth.get_cloud_type()
 
     # 生成执行插件dag
-    dag, result, execute_result, execute_status = build_and_run_dag(workflow_schema, content)
+    dag, result, execute_result, execute_status = build_and_run_dag(workflow_schema, content, workflow_id)
     if not execute_result:
         return jsonify({"code": 7, "msg": "execute result not exists"})
 
@@ -141,7 +141,7 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
         config = json.loads(plugin.dag_content)
         converted_config = utils.workflow_format_convert(config)
-        dag = build_dag(converted_config)
+        dag = build_dag(converted_config,'', plugin.id)
     except Exception as e:
         logger.error(f"plugin_run_for_bigmodel failed: {repr(e)}")
         return json.dumps({"code": 7, "msg": repr(e)})

@@ -49,7 +49,7 @@ from agentscope.service import (
 from agentscope.service.web.apiservice import api_request_for_big_model
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.aibigmodel_workflow.config import LLM_URL, RAG_URL, LLM_TOKEN
-
+import agentscope.web.workstation.workflow_search as workflow_search
 try:
     import networkx as nx
 except ImportError:
@@ -114,8 +114,14 @@ class ASDiGraph(nx.DiGraph):
 
         self.execs = ["\n"]
         self.config = {}
+
         kwargs.setdefault('uuid', None)
         self.uuid = kwargs['uuid']
+        kwargs.setdefault('workflow_id', None)
+        self.workflow_id = kwargs['workflow_id']
+        kwargs.setdefault('plugin_id', None)
+        self.plugin_id = kwargs['plugin_id']
+
         self.params_pool = {}
         self.conditions_pool = {}
         self.selected_branch = -1
@@ -2434,6 +2440,8 @@ class RAGNode(WorkflowNode):
         self.api_url = params_dict['settings']['url']
         self.knowledgeBase = params_dict['settings']['knowledgeBase']
         self.userId = params_dict['settings']['userId']
+        if self.userId == "":
+            self.userId = workflow_search.get_private_cloud_tenant_id(self.dag_obj.workflow_id, self.dag_obj.plugin_id)
         if not isinstance(self.api_header, dict):
             raise Exception(f"header:{self.api_header} type is not dict")
 
