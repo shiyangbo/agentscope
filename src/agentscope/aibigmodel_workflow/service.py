@@ -12,7 +12,7 @@ from loguru import logger
 import database
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.utils.jwt_auth import SIMPLE_CLOUD, PRIVATE_CLOUD
-from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.web.workstation.workflow_dag import build_dag_for_aibigmodel
 from config import db, SERVICE_URL
 from database import _ExecuteTable, _WorkflowTable, _PluginTable
 
@@ -67,7 +67,7 @@ def build_and_run_dag(workflow_schema, content):
     try:
         converted_config = utils.workflow_format_convert(workflow_schema)
         logger.info(f"config: {converted_config}")
-        dag = build_dag(converted_config)
+        dag = build_dag_for_aibigmodel(converted_config, {})
     except Exception as e:
         logger.error(f"Workflow_run failed: {repr(e)}")
         return None, None, None, WorkflowNodeStatus.FAILED
@@ -141,7 +141,7 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
         config = json.loads(plugin.dag_content)
         converted_config = utils.workflow_format_convert(config)
-        dag = build_dag(converted_config)
+        dag = build_dag_for_aibigmodel(converted_config, {})
     except Exception as e:
         logger.error(f"plugin_run_for_bigmodel failed: {repr(e)}")
         return json.dumps({"code": 7, "msg": repr(e)})

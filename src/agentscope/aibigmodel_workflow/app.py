@@ -22,7 +22,7 @@ import service
 import database
 from agentscope.web.workstation.workflow_utils import WorkflowNodeStatus
 from agentscope.utils.jwt_auth import SIMPLE_CLOUD, PRIVATE_CLOUD
-from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.web.workstation.workflow_dag import build_dag_for_aibigmodel
 
 from flask import request, jsonify, g
 
@@ -189,7 +189,7 @@ def node_run_api() -> Response:
     try:
         # 使用node_id, 获取需要运行的node配置
         node_config = utils.node_format_convert(node)
-        dag = build_dag(node_config)
+        dag = build_dag_for_aibigmodel(node_config, {})
     except Exception as e:
         logger.error(f"node_run_api failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})
@@ -221,7 +221,7 @@ def node_run_python() -> Response:
         # 存入数据库的数据为前端格式，需要转换为后端可识别格式
         converted_config = utils.workflow_format_convert(node_schema)
         logger.info(f"config: {converted_config}")
-        dag = build_dag(converted_config)
+        dag = build_dag_for_aibigmodel(converted_config, {})
     except Exception as e:
         logger.error(f"node_run_python failed: {repr(e)}")
         return jsonify({"code": 7, "msg": repr(e)})

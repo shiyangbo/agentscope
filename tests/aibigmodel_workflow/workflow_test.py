@@ -1,8 +1,8 @@
 import json
 import traceback
-from agentscope.web.workstation.workflow_dag import build_dag
+from agentscope.web.workstation.workflow_dag import build_dag_for_aibigmodel
 from agentscope.studio._app import _remove_file_paths
-from agentscope.aibigmodel_workflow.app import workflow_format_convert
+from agentscope.aibigmodel_workflow.utils import workflow_format_convert
 from typing import Tuple
 
 
@@ -13,7 +13,7 @@ def convert_to_py(content: str, **kwargs) -> Tuple:
     try:
         cfg = json.loads(content)
         print(cfg)
-        return "True", build_dag(cfg).compile(**kwargs)
+        return "True", build_dag_for_aibigmodel(cfg, {}).compile(**kwargs)
     except Exception as e:
         return "False", _remove_file_paths(
             f"Error: {e}\n\n" f"Traceback:\n" f"{traceback.format_exc()}",
@@ -152,7 +152,7 @@ def test_workflow_run():
     config_frontend = load_config(script_path)
     config_backend = workflow_format_convert(config_frontend)
     dict1 = {'poi': [{"location": "beijing"}]}
-    dag = build_dag(config_backend)
+    dag = build_dag_for_aibigmodel(config_backend, {})
     dag.run_with_param(dict1, config_frontend)
     # hack, 释放变量池里的内存空间
     if len(dag.params_pool) > 0:
