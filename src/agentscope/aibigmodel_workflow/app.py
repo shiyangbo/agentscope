@@ -469,7 +469,8 @@ def workflow_get() -> tuple[Response, int] | Response:
         "configName": workflow_config.config_name,
         "configENName": workflow_config.config_en_name,
         "configDesc": workflow_config.config_desc,
-        "workflowSchema": dag_content
+        "workflowSchema": dag_content,
+        "tenant_id": workflow_config.tenant_id
     }
     return jsonify(
         {
