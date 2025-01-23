@@ -40,6 +40,8 @@ else:
     DATABASE = config['DATABASE']
     SERVICE_URL = config['SERVICE_URL']
     RAG_URL = config['RAG_URL']
+    RAG_VERIFY_INSERT_URL = config['RAG_VERIFY_INSERT_URL']
+    RAG_VERIFY_DELETE_URL = config['RAG_VERIFY_DELETE_URL']
     LLM_URL = config['LLM_URL']
     LLM_TOKEN = config['LLM_TOKEN']
     SERVER_PORT = config['SERVER_PORT']

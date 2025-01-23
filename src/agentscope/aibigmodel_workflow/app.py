@@ -11,7 +11,7 @@ import uuid
 import base64
 
 from datetime import datetime
-from typing import  Union, Optional
+from typing import Union, Optional
 from sqlalchemy.exc import SQLAlchemyError
 from flask import Response
 from loguru import logger
@@ -100,6 +100,16 @@ def plugin_publish() -> Response:
     if len(plugin) > 0:
         return jsonify(
             {"code": 7, "msg": f"Multiple records found for plugin en name: {workflow_result.config_en_name}"})
+
+    # TODO：私有云测试，之后行业云支持后删除
+    if cloud_type == PRIVATE_CLOUD:
+        verify_result = None
+        for _ in range(2):  # 尝试两次
+            verify_result = utils.send_rag_insert_request(workflow_result, cloud_type)
+            if verify_result is None:
+                break  # 如果请求无报错，退出循环
+        if verify_result is not None:
+            return verify_result
 
     result = service.plugin_publish(workflow_id, user_id, workflow_result, plugin_field, description)
 
@@ -365,6 +375,17 @@ def workflow_delete() -> Response:
     workflow_results = _WorkflowTable.query.filter(*query_filter).all()
 
     if workflow_results:
+
+        # TODO：私有云测试，之后行业云支持后删除
+        if cloud_type == PRIVATE_CLOUD:
+            verify_result = None
+            for _ in range(2):  # 尝试两次
+                verify_result = utils.send_rag_delete_request(workflow_results, cloud_type)
+                if verify_result is None:
+                    break  # 如果请求无报错，退出循环
+            if verify_result is not None:
+                return verify_result
+
         try:
             db.session.query(_WorkflowTable).filter(*query_filter).delete()
             db.session.query(_PluginTable).filter(*query_filter).delete()
@@ -372,6 +393,7 @@ def workflow_delete() -> Response:
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"code": 5000, "msg": str(e)})
+
         return jsonify({"code": 0, "msg": "Workflow file deleted successfully"})
     else:
         return jsonify({"code": 7, "msg": "Record not found"})
@@ -531,6 +553,7 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     result = service.get_workflow_list(cloud_type, keyword, status, page, limit)
 
     return result
+
 
 def init(
         host: str = "0.0.0.0",
