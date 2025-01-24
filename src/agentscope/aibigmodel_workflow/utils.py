@@ -3,7 +3,10 @@ import json
 import re
 
 from pypinyin import lazy_pinyin
-
+from src.agentscope.service import api_request_for_big_model, service_status
+from config import RAG_VERIFY_INSERT_URL, RAG_VERIFY_DELETE_URL
+from flask import jsonify
+from agentscope.utils.jwt_auth import SIMPLE_CLOUD, PRIVATE_CLOUD
 
 class WorkflowStatus:  # type: ignore[name-defined]
     WORKFLOW_PUBLISHED = "published",  # 已发布状态
@@ -286,3 +289,77 @@ def add_max_suffix(config_name: str, existing_config_copies: dict) -> int:
     # 找出最大后缀
     name_suffix = max(existing_suffixes, default=0) + 1
     return name_suffix
+
+
+# 适配知识库校验,提取knowledgeBaseId列表
+def extract_knowledge_base(dag_content):
+    # 使用列表推导式查找第一个 type 为 RAGNode 的节点
+    rag_node = next((node for node in dag_content.get('nodes', []) if node.get('type') == 'RAGNode'), None)
+
+    # 如果找到了 RAGNode 节点，则提取 knowledgeBaseId
+    if rag_node:
+        return rag_node.get('data', {}).get('settings', {}).get('knowledgeBaseId')
+
+    return []
+
+
+# 插件已使用知识库，调用接口在知识库服务进行注册绑定，该知识库进入锁定状态
+def send_rag_insert_request(workflow_result, cloud_type):
+    # 发送校验接口，将ID请求给知识库服务进行标识加锁
+    knowledgebase_ids = extract_knowledge_base(workflow_result.dag_content)
+
+    param_dict = {}
+    headers = {}
+
+    if cloud_type == PRIVATE_CLOUD:
+        param_dict = {
+            "categoryIds": knowledgebase_ids,
+            "userId": workflow_result.tenant_id,
+            "relatedModule": 2
+        }
+    elif cloud_type == SIMPLE_CLOUD:
+        param_dict = {
+            "categoryIds": knowledgebase_ids,
+            "userId": workflow_result.user_id,
+            "relatedModule": 2
+        }
+
+    response = api_request_for_big_model(url=RAG_VERIFY_INSERT_URL, method='POST', headers=headers, data=param_dict)
+
+    if response.status == service_status.ServiceExecStatus.ERROR:
+        return jsonify({"code": 7, "msg": "RAG知识库状态注册失败,请联系管理员"})
+    if response.content is None:
+        return jsonify({"code": 7, "msg": "RAG知识库状态注册失败,请联系管理员"})
+
+    return None
+
+
+# 插件已使用知识库，调用接口在知识库服务进行解绑，该知识库退出锁定状态
+def send_rag_delete_request(workflow_result, cloud_type):
+    # 发送校验接口，将ID请求给知识库服务进行标识加锁
+    knowledgebase_ids = extract_knowledge_base(workflow_result.dag_content)
+
+    param_dict = {}
+    headers = {}
+
+    if cloud_type == PRIVATE_CLOUD:
+        param_dict = {
+            "categoryIds": knowledgebase_ids,
+            "userId": workflow_result.tenant_id,
+            "relatedModule": 2
+        }
+    elif cloud_type == SIMPLE_CLOUD:
+        param_dict = {
+            "categoryIds": knowledgebase_ids,
+            "userId": workflow_result.user_id,
+            "relatedModule": 2
+        }
+
+    response = api_request_for_big_model(url=RAG_VERIFY_DELETE_URL, method='POST', headers=headers, data=param_dict)
+
+    if response.status == service_status.ServiceExecStatus.ERROR:
+        return jsonify({"code": 7, "msg": "RAG知识库状态解绑失败,请联系管理员"})
+    if response.content is None:
+        return jsonify({"code": 7, "msg": "RAG知识库状态解绑失败,请联系管理员"})
+
+    return None
