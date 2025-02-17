@@ -9,6 +9,8 @@
 
  SERVICE_URL: 'http://106.74.31.170:5003/plugin/api'
  RAG_URL: 'https://122.13.25.19:5001/openapi/tool/oimsunb59e1b94/knowledge/search-knowledge-base'
+ RAG_VERIFY_INSERT_URL: 'http://doc-webserver.maas-prod:9510/v1/api/relate/insert'
+ RAG_VERIFY_DELETE_URL: 'http://doc-webserver.maas-prod:9510/v1/api/relate/delete'
  LLM_URL: 'http://192.168.2.180:8001/llmproxy/api/v1/unicom/unicom-70b-chat'
  LLM_TOKEN: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjczMWE1ZmVlLTBhYjctNDQzMS1iMGQzLWY2ODA3ZmJhNWFlNSIsInVzZXJuY
  W1lIjoiYWRtaW4iLCJuaWNrbmFtZSI6ImFkbWluIiwidXNlclR5cGUiOjAsImlzcyI6IjczMWE1ZmVlLTBhYjctNDQzMS1iMGQzLWY2ODA3ZmJhNWFlNSIs

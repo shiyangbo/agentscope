@@ -81,7 +81,6 @@ def build_dag(config: dict) -> ASDiGraph:
     dag = ASDiGraph(**{'uuid': str(uuid.uuid4())})
 
     dag.config = config
-    dag.save("./test_save.json")
     logger.info((f"config {config}"))
     for node_id, node_info in config.items():
         config[node_id] = sanitize_node_data(node_info)
@@ -141,7 +140,6 @@ def build_dag_for_aibigmodel(config: dict, extra_inner_parameter: dict) -> ASDiG
     dag = ASDiGraph(**{'uuid': str(uuid.uuid4())})
 
     dag.config = config
-    dag.save("./test_save.json")
     logger.info((f"config {config}"))
     for node_id, node_info in config.items():
         config[node_id] = sanitize_node_data(node_info)
