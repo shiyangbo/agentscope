@@ -173,17 +173,22 @@ def plugin_run_for_bigmodel(plugin, input_params, plugin_en_name):
 
 def get_workflow_list(cloud_type, keyword=None, status=None, page=1, limit=10):
     try:
+        # 用户查询时，将样例数据与用户数据同时返回
         if cloud_type == SIMPLE_CLOUD:
             user_id = auth.get_user_id()
             if not user_id:
                 return jsonify({"code": 7, "msg": "userID is required"})
-            query = db.session.query(_WorkflowTable).filter_by(user_id=user_id)
+            query = db.session.query(_WorkflowTable).filter(
+                (_WorkflowTable.user_id == user_id) |
+                (_WorkflowTable.example_flag == utils.WorkflowType.WORKFLOW_EXAMPLE)
+            )
         elif cloud_type == PRIVATE_CLOUD:
             tenant_ids = auth.get_tenant_ids()
             if len(tenant_ids) == 0:
                 return jsonify({"code": 7, "msg": "tenant_ids is required"})
             query = db.session.query(_WorkflowTable).filter(
-                _WorkflowTable.tenant_id.in_(tenant_ids)
+                (_WorkflowTable.tenant_id.in_(tenant_ids)) |
+                (_WorkflowTable.example_flag == utils.WorkflowType.WORKFLOW_EXAMPLE)
             )
         else:
             return jsonify({"code": 7, "msg": "不支持的云类型"})
@@ -197,8 +202,9 @@ def get_workflow_list(cloud_type, keyword=None, status=None, page=1, limit=10):
         # 获取符合user_id条件的所有记录数
         total = query.count()
 
-        # 分页查询
-        workflows = query.order_by(_WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
+        # 先按example_flag排序，再按updated_time排序
+        workflows = query.order_by(_WorkflowTable.example_flag.desc(),
+                                   _WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
 
         workflows_list = [workflow.to_dict() for workflow in workflows]
         data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": total}
@@ -261,6 +267,45 @@ def workflow_clone(workflow_config, user_id, tenant_ids):
     return jsonify(response_data)
 
 
+def workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc,
+                           tenant_id):
+    # 根据样例的workflow_id，查找对应的插件数据并复制
+    # 无用户信息，直接检索
+    workflow_config = database.fetch_records_by_filters(_WorkflowTable,
+                                                        method='first',
+                                                        id=workflow_id)
+
+    dag_content = workflow_config.dag_content
+    # 查询相同英文名称的工作流配置，并为新副本生成唯一的名称
+    workflow_id = uuid.uuid4()
+    try:
+        db.session.add(
+            _WorkflowTable(
+                id=str(workflow_id),
+                user_id=user_id,
+                config_name=config_name,
+                config_en_name=config_en_name,
+                config_desc=config_desc,
+                status=utils.WorkflowStatus.WORKFLOW_DRAFT,
+                updated_time=datetime.now(),
+                dag_content=dag_content,
+                tenant_id=tenant_id
+            ),
+        )
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"code": 7, "msg": str(e)})
+
+    data = {
+        "workflowID": str(workflow_id),
+        "configName": config_name,
+        "configENName": config_en_name,
+        "configDesc": config_desc
+    }
+    return jsonify({"code": 0, "data": data, "msg": "Workflow file cloned successfully"})
+
+
 def workflow_save(workflow_id, config_name, config_en_name, config_desc, workflow_dict, user_id, tenant_ids):
     # 查询条件
     if auth.get_cloud_type() == SIMPLE_CLOUD:
@@ -276,6 +321,10 @@ def workflow_save(workflow_id, config_name, config_en_name, config_desc, workflo
 
     if not workflow_results:
         return jsonify({"code": 5000, "msg": "Internal Server Error"})
+
+    # 样例数据防御性措施，禁止自动保存更改
+    if workflow_results.example_flag == utils.WorkflowType.WORKFLOW_EXAMPLE:
+        return jsonify({"code": 0, "data": {"workflowID": str(workflow_id)}, "msg": "样例数据复制后可以进行修改"})
 
     if auth.get_cloud_type() == SIMPLE_CLOUD:
         # 检查英文名称唯一性

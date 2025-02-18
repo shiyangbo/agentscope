@@ -11,7 +11,7 @@ import uuid
 import base64
 
 from datetime import datetime
-from typing import  Union, Optional
+from typing import Union, Optional
 from sqlalchemy.exc import SQLAlchemyError
 from flask import Response
 from loguru import logger
@@ -435,6 +435,56 @@ def workflow_clone() -> Response:
     return result
 
 
+@app.route("/workflow/example_clone", methods=["POST"])
+def workflow_example_clone() -> Response:
+    # request 参数获取
+    data = request.json
+    workflow_id = data.get("workflowID")
+    tenant_id = data.get("tenantId")
+    config_name = data.get("configName")
+    config_en_name = data.get("configENName")
+    config_desc = data.get("configDesc")
+
+    if ' ' in config_en_name:
+        return jsonify({"code": 7, "msg": "英文名称不允许有空格"})
+    if not config_name or not config_desc:
+        return jsonify({"code": 7, "msg": "configName,configDesc is required"})
+
+    # 适配私有云
+    cloud_type = auth.get_cloud_type()
+    user_id = auth.get_user_id()
+    tenant_ids = auth.get_tenant_ids()
+
+    # 用户未输入英文名称，则自动生成，用户输入英文名称，则保存用户输入
+    if config_en_name == "":
+        config_en_name = utils.chinese_to_pinyin(config_name)
+        workflow_results = _WorkflowTable.query.filter(
+            _WorkflowTable.config_en_name.like(f"{config_en_name}%"),
+            _WorkflowTable.user_id == user_id if cloud_type == SIMPLE_CLOUD else _WorkflowTable.tenant_id.in_(
+                tenant_ids)
+        ).all()
+        # 查询表中同一用户下是否有重复config_en_name的记录
+        if not workflow_results:
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc, tenant_id)
+        else:
+            name_suffix = utils.add_max_suffix(config_en_name, workflow_results)
+            # 生成新的配置名称
+            new_config_en_name = f"{config_en_name}_{name_suffix}"
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, new_config_en_name, config_desc, tenant_id)
+        return response
+    else:
+        workflow_results = _WorkflowTable.query.filter(
+            _WorkflowTable.user_id == user_id,
+            _WorkflowTable.config_en_name == config_en_name
+        ).all()
+        # 查询表中同一用户下是否有重复config_en_name的记录
+        if not workflow_results:
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc, tenant_id)
+            return response
+        else:
+            return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
+
+
 @app.route("/workflow/get", methods=["GET"])
 def workflow_get() -> tuple[Response, int] | Response:
     """
@@ -532,6 +582,62 @@ def workflow_get_list() -> tuple[Response, int] | Response:
 
     return result
 
+
+def create_preset_data():
+    # 检查数据表中是否存在预置数据
+    if not _WorkflowTable.query.filter_by(id='example').first():
+        preset_data = _WorkflowTable(
+            id='example',
+            user_id='',
+            config_name='美食推荐-标准示例',
+            config_en_name='MeiShiTuiJian-Example',
+            config_desc='根据输入的位置信息搜索国内的美食店铺',
+            dag_content='{"nodes": [{"id": "c0f17048-59b9-4417-8596-43d8c2c05dd4", "name": "\u5f00\u59cb", '
+                        '"type": "StartNode", "data": {"outputs": [{"list_schema": "", "name": "keywords", '
+                        '"object_schema": "", "type": "string", "value": {"type": "generated", "content": ""}, '
+                        '"required": "false", "desc": '
+                        '"\u7f8e\u98df\u76f8\u5173\u7684\u540d\u79f0\uff0c\u4f8b\u5982\u5496\u5561\u9986\u3001\u996d'
+                        '\u5e97\u7b49"}, {"name": "pois", "type": "string", "value": {"type": "generated", '
+                        '"content": ""}, "required": true, "desc": '
+                        '"\u5177\u4f53\u7684\u5730\u70b9\u540d\u79f0\uff0c\u4f8b\u5982\u5317\u4eac\u3001\u6d77\u6dc0'
+                        '\u533a\u3001\u540e\u5382\u6751\u8def"}], "inputs": [], "settings": {}}}, '
+                        '{"id": "b1c1def1-41a4-4473-8cdb-9137857fdd1d", "name": "\u7ed3\u675f", "type": "EndNode", '
+                        '"data": {"outputs": [], "inputs": [{"list_schema": "", "name": "answer", "newRefContent": '
+                        '"API_1/pois", "object_schema": "", "type": "string", "value": {"type": "ref", "content": {'
+                        '"ref_node_id": "apinode_1735027638635", "ref_var_name": "pois"}}, "required": "false", '
+                        '"desc": ""}], "settings": {}}}, {"id": "apinode_", "name": "API", "type": "ApiNode", '
+                        '"data": {"outputs": [{"name": "count", "type": "string", "value": {"type": "generated", '
+                        '"content": ""}}, {"name": "infocode", "type": "string", "value": {"type": "generated", '
+                        '"content": ""}}, {"name": "pois", "type": "object", "value": {"type": "generated", '
+                        '"content": ""}}, {"name": "info", "type": "string", "value": {"type": "generated", '
+                        '"content": ""}}, {"name": "status", "type": "string", "value": {"type": "generated", '
+                        '"content": ""}}], "inputs": [{"newValue": "\u96cd\u548c\u5bab", "extra": {"location": '
+                        '"query"}, "name": "keywords", "newRefContent": "\u5f00\u59cb/pois", "type": "string", '
+                        '"value": {"type": "ref", "content": {"ref_node_id": "c0f17048-59b9-4417-8596-43d8c2c05dd4", '
+                        '"ref_var_name": "pois"}}, "required": false, "desc": ""}, {"newValue": '
+                        '"77b5f0d102c848d443b791fd469b732d", "extra": {"location": "query"}, "name": "key", '
+                        '"type": "string", "value": {"type": "generated", "content": '
+                        '"77b5f0d102c848d443b791fd469b732d"}, "required": false, "desc": ""}, {"newValue": "", '
+                        '"extra": {"location": "query"}, "name": "", "type": "string", "value": {"type": "ref", '
+                        '"content": {"ref_node_id": "", "ref_var_name": ""}}, "required": false, "desc": ""}], '
+                        '"settings": {"headers": {}, "http_method": "GET", "content_type": "application/json", '
+                        '"url": "https://restapi.amap.com/v5/place/text"}}}, {"id": "pythonnode_", '
+                        '"name": "\u4ee3\u7801", "type": "PythonNode", "data": {"outputs": [{"name": "key0", '
+                        '"newRefContent": "", "type": "string", "value": {"type": "generated", "content": ""}, '
+                        '"required": false, "desc": ""}], "inputs": [{"name": "pois", "newRefContent": "API/pois", '
+                        '"type": "string", "value": {"type": "ref", "content": {"ref_node_id": "apinode_", '
+                        '"ref_var_name": "pois"}}, "required": true, "desc": ""}], "settings": {"code": '
+                        '"IyDlrprkuYnkuIDkuKogbWFpbiDlh73mlbDvvIznlKjmiLflj6rog73lnKhtYWlu5Ye95pWw6YeM5YGa5Luj56CB5byA5Y+R44CCDQojIOWFtuS4re+8jOWbuuWumuS8oOWFpSBwYXJhbXMg5Y+C5pWw77yI5a2X5YW45qC85byP77yJ77yM5a6D5YyF5ZCr5LqG6IqC54K56YWN572u55qE5omA5pyJ6L6T5YWl5Y+Y6YeP44CCDQojIOWFtuS4re+8jOWbuuWumui/lOWbniBvdXRwdXRfcGFyYW1zIOWPguaVsO+8iOWtl+WFuOagvOW8j++8ie+8jOWug+WMheWQq+S6huiKgueCuemFjee9rueahOaJgOaciei+k+WHuuWPmOmHj+OAgg0KIyDov5DooYznjq/looMgUHl0aG9uMy4NCg0KIyBtYWluIOWHveaVsO+8jOWbuuWumuS8oOWFpSBwYXJhbXMg5Y+C5pWwDQpkZWYgbWFpbihwYXJhbXMpOg0KICAgICMg55So5oi36Ieq5a6a5LmJ6YOo5YiGLi4uLi4uDQoNCiAgICAjIOWbuuWumui/lOWbniBvdXRwdXRfcGFyYW1zIOWPguaVsA0KICAgIG91dHB1dF9wYXJhbXMgPSB7DQogICAgICAgIyDnlKjmiLfoh6rlrprkuYnpg6jliIYuLi4uLi4NCiAgICAgICAia2V5MCI6IHBhcmFtc1sncG9pcyddWzBdWyJsb2NhdGlvbiJdLA0KICAgIH0NCiAgICByZXR1cm4gb3V0cHV0X3BhcmFtcw0K", "language": "Python"}}}, {"id": "apinode_1735027638635", "name": "API_1", "type": "ApiNode", "data": {"outputs": [{"name": "count", "type": "string", "value": {"type": "generated", "content": ""}}, {"name": "infocode", "type": "string", "value": {"type": "generated", "content": ""}}, {"name": "pois", "type": "object", "value": {"type": "generated", "content": ""}}, {"name": "info", "type": "string", "value": {"type": "generated", "content": ""}}, {"name": "status", "type": "string", "value": {"type": "generated", "content": ""}}], "inputs": [{"newValue": "116.418294,39.949199", "extra": {"location": "query"}, "name": "location", "newRefContent": "\u4ee3\u7801/key0", "type": "string", "value": {"type": "ref", "content": {"ref_node_id": "pythonnode_", "ref_var_name": "key0"}}, "required": false, "desc": ""}, {"newValue": "\u5496\u5561\u9986", "extra": {"location": "query"}, "name": "keywords", "newRefContent": "\u5f00\u59cb/keywords", "type": "string", "value": {"type": "ref", "content": {"ref_node_id": "c0f17048-59b9-4417-8596-43d8c2c05dd4", "ref_var_name": "keywords"}}, "required": false, "desc": ""}, {"newValue": "77b5f0d102c848d443b791fd469b732d", "extra": {"location": "query"}, "name": "key", "type": "string", "value": {"type": "generated", "content": "77b5f0d102c848d443b791fd469b732d"}, "required": false, "desc": ""}, {"newValue": "", "extra": {"location": "query"}, "name": "", "type": "string", "value": {"type": "ref", "content": {"ref_node_id": "", "ref_var_name": ""}}, "required": false, "desc": ""}], "settings": {"headers": {}, "http_method": "GET", "content_type": "application/json", "url": "https://restapi.amap.com/v5/place/around"}}}], "edges": [{"source_node_id": "pythonnode_", "source_port": "pythonnode_-right", "target_node_id": "apinode_1735027638635", "target_port": "apinode_1735027638635-left"}, {"source_node_id": "apinode_1735027638635", "source_port": "apinode_1735027638635-right", "target_node_id": "b1c1def1-41a4-4473-8cdb-9137857fdd1d", "target_port": "b1c1def1-41a4-4473-8cdb-9137857fdd1d-left"}, {"source_node_id": "apinode_", "source_port": "apinode_-right", "target_node_id": "pythonnode_", "target_port": "pythonnode_-left"}, {"source_node_id": "c0f17048-59b9-4417-8596-43d8c2c05dd4", "source_port": "c0f17048-59b9-4417-8596-43d8c2c05dd4-right", "target_node_id": "apinode_", "target_port": "apinode_-left"}]}',
+            status='draft',
+            updated_time=datetime.now(),
+            execute_status='',
+            tenant_id='',
+            example_flag=utils.WorkflowType.WORKFLOW_EXAMPLE  # 设置示例标志为样例
+        )
+        db.session.add(preset_data)
+        db.session.commit()
+
+
 def init(
         host: str = "0.0.0.0",
         port: int = SERVER_PORT,
@@ -561,6 +667,7 @@ def init(
     # Create the cache directory
     with app.app_context():
         db.create_all()
+        create_preset_data()
 
     if debug:
         app.logger.setLevel("DEBUG")
