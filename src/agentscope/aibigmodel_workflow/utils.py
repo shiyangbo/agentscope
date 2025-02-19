@@ -9,6 +9,9 @@ class WorkflowStatus:  # type: ignore[name-defined]
     WORKFLOW_PUBLISHED = "published",  # 已发布状态
     WORKFLOW_DRAFT = "draft"  # 未发布状态
 
+class WorkflowType:  # type: ignore[name-defined]
+    WORKFLOW_EXAMPLE = 1,  # 插件样例
+
 
 def workflow_format_convert(origin_dict: dict) -> dict:
     converted_dict = {}

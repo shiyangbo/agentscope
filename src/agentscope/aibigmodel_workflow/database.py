@@ -23,6 +23,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
     updated_time = db.Column(db.DateTime)
     execute_status = db.Column(db.String(10))
     tenant_id = db.Column(db.String(100))  # TenantID
+    example_flag = db.Column(db.Integer, default=0)  # 样例ID，0表示客户创建，1表示预置样例
 
     def to_dict(self):
         return {
@@ -32,6 +33,7 @@ class _WorkflowTable(db.Model):  # type: ignore[name-defined]
             'configENName': self.config_en_name,
             'configDesc': self.config_desc,
             'status': self.status,
+            'example_flag': self.example_flag,
             'updatedTime': self.updated_time.strftime('%Y-%m-%d %H:%M:%S')
         }
 
