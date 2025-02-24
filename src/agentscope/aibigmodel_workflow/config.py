@@ -47,7 +47,6 @@ else:
     SQLALCHEMY_DATABASE_URI = "{}+{}://{}:{}@{}:{}/{}?charset=utf8".format(DIALECT, DRIVER, USERNAME, PASSWORD, HOST,
                                                                            PORT,
                                                                            DATABASE)
-    print(SQLALCHEMY_DATABASE_URI)
     app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
     app.config['SQLALCHEMY_ECHO'] = True
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
