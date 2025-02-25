@@ -1,4 +1,6 @@
 from config import db
+from sqlalchemy import or_
+
 class _ExecuteTable(db.Model):  # type: ignore[name-defined]
     """Execute workflow."""
     __tablename__ = "llm_execute_info"
@@ -56,28 +58,34 @@ class _PluginTable(db.Model):  # type: ignore[name-defined]
 def fetch_records_by_filters(table, columns=None, method='first', **kwargs):
     """
     Get workflow by filters.
-
     Args:
         table: The database table to select
         columns (list): The columns to select.
         method (str): The method to use for the query ('all' or 'first').
         **kwargs: Keyword arguments to filter the query.
-
     Returns:
         list or _PluginTable: The plugins that match the filters or None if no match is found.
     """
     query = table.query
     if columns:
         query = query.with_entities(*columns)
+
     # 构建过滤条件
     filters = []
     for key, value in kwargs.items():
+        if key == 'or_conditions':
+            continue  # 跳过 or_conditions，稍后处理
         if key.endswith('__in'):
             filters.append(getattr(table, key[:-4]).in_(value))
         elif key.endswith('__like'):
             filters.append(getattr(table, key[:-6]).like(value))
         else:
             filters.append(getattr(table, key) == value)
+
+    # 处理 or_conditions
+    if 'or_conditions' in kwargs:
+        or_conditions = kwargs['or_conditions']
+        filters.append(parse_or_conditions(table, or_conditions))
 
     # 应用过滤条件
     query = query.filter(*filters)
@@ -88,3 +96,28 @@ def fetch_records_by_filters(table, columns=None, method='first', **kwargs):
         return query.first()
     else:
         raise ValueError(f"Invalid method '{method}'. Use 'all' or 'first'.")
+
+
+def parse_or_conditions(table, or_conditions):
+    """
+    Parse OR conditions and return a SQLAlchemy query condition.
+
+    Args:
+        table: The database table to select from.
+        or_conditions (tuple): A tuple containing OR conditions.
+
+    Returns:
+        sqlalchemy.sql.elements.BinaryExpression: A SQLAlchemy query condition.
+    """
+    conditions = []
+    for condition in or_conditions:
+        if isinstance(condition, tuple):
+            field, value = condition
+            if isinstance(value, list):
+                conditions.append(getattr(table, field).in_(value))
+            else:
+                conditions.append(getattr(table, field) == value)
+        else:
+            raise ValueError(f"Invalid OR condition: {condition}")
+    return or_(*conditions)
+

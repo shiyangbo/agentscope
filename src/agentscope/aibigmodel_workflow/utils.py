@@ -10,7 +10,7 @@ class WorkflowStatus:  # type: ignore[name-defined]
     WORKFLOW_DRAFT = "draft"  # 未发布状态
 
 class WorkflowType:  # type: ignore[name-defined]
-    WORKFLOW_EXAMPLE = 1,  # 插件样例
+    WORKFLOW_EXAMPLE = 1, # 插件样例
 
 
 def workflow_format_convert(origin_dict: dict) -> dict:
