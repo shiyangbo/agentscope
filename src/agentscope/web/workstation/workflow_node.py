@@ -178,8 +178,8 @@ class ASDiGraph(nx.DiGraph):
 
                 # hack 保证转义字符串不影响eval函数运行
                 if isinstance(left_value, str) and isinstance(right_value, str):
-                    left_value = f'"{repr(left_value)}"'
-                    right_value = f'"{repr(right_value)}"'
+                    left_value = f"{repr(left_value)}"
+                    right_value = f"{repr(right_value)}"
 
                 condition_str += self.generate_operator_comparison(operator, left_value, right_value, right_data_type)
 
