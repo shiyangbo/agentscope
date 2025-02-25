@@ -157,6 +157,7 @@ class ASDiGraph(nx.DiGraph):
             raise Exception("分支器节点存在未连接的分支")
         conditions = condition_data['conditions']
         condition_str = ""
+
         # conditions为空列表且之前的条件不满足时，代表条件为else
         if not conditions:
             if (switch_node_id not in self.conditions_pool or
@@ -175,20 +176,27 @@ class ASDiGraph(nx.DiGraph):
                 left_value = left['value']['content']
                 right_value = right['value']['content']
 
+                # hack 保证转义字符串不影响eval函数运行
+                if isinstance(left_value, str) and isinstance(right_value, str):
+                    left_value = f'"{repr(left_value)}"'
+                    right_value = f'"{repr(right_value)}"'
+
                 condition_str += self.generate_operator_comparison(operator, left_value, right_value, right_data_type)
 
                 if i < len(conditions) - 1:
                     condition_str += f" {logic} "
-            logger.info(
-                f"======= Switch Node condition_str {condition_str}")
+            logger.info(f"======= Switch Node condition_str {condition_str}")
             try:
+                # 使用 eval 函数进行求值
                 condition_func = eval(condition_str)
             except Exception as e:
                 error_message = f"条件语句错误: {e}"
                 raise Exception(error_message)
+
             # 确认当前条件成功的分支
             if self.selected_branch == -1:
                 self.selected_branch = branch + 1 if condition_func else -1
+
             # 添加执行结果到conditions_pool中，后续节点进行判断
             self.update_conditions_pool_with_running_node(switch_node_id, target_node_id, condition_func)
 
