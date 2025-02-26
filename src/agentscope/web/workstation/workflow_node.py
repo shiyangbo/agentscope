@@ -176,11 +176,6 @@ class ASDiGraph(nx.DiGraph):
                 left_value = left['value']['content']
                 right_value = right['value']['content']
 
-                # hack 保证转义字符串不影响eval函数运行
-                if isinstance(left_value, str) and isinstance(right_value, str):
-                    left_value = f"{repr(left_value)}"
-                    right_value = f"{repr(right_value)}"
-
                 condition_str += self.generate_operator_comparison(operator, left_value, right_value, right_data_type)
 
                 if i < len(conditions) - 1:
@@ -203,9 +198,9 @@ class ASDiGraph(nx.DiGraph):
     def generate_operator_comparison(self, operator, left_value, right_value, data_type) -> str:
         if data_type == "ref":
             if isinstance(left_value, str):
-                left_value = f"'{left_value}'"
+                left_value = f"{repr(left_value)}"
             if isinstance(right_value, str):
-                right_value = f"'{right_value}'"
+                right_value = f"{repr(right_value)}"
             switcher = {
                 'eq': f"{left_value} == {right_value}",
                 'not_eq': f"{left_value} != {right_value}",
@@ -220,7 +215,7 @@ class ASDiGraph(nx.DiGraph):
             }
         else:
             if isinstance(left_value, str):
-                left_value = f"'{left_value}'"
+                left_value = f"{repr(left_value)}"
             switcher = {
                 'eq': f"{left_value} == '{right_value}'",
                 'not_eq': f"{left_value} != '{right_value}'",
