@@ -32,7 +32,8 @@ from service import _ExecuteTable, _WorkflowTable, _PluginTable
 
 # 定义不需要 JWT 验证的公开路由
 PUBLIC_ENDPOINTS = [
-    "/plugin/api/run_for_bigmodel/"
+    "/plugin/api/run_for_bigmodel/",
+    "/workflow/list_internal"
 ]
 
 
@@ -465,12 +466,14 @@ def workflow_example_clone() -> Response:
         ).all()
         # 查询表中同一用户下是否有重复config_en_name的记录
         if not workflow_results:
-            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc, tenant_id)
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc,
+                                                      tenant_id)
         else:
             name_suffix = utils.add_max_suffix(config_en_name, workflow_results)
             # 生成新的配置名称
             new_config_en_name = f"{config_en_name}_{name_suffix}"
-            response = service.workflow_example_clone(workflow_id, user_id, config_name, new_config_en_name, config_desc, tenant_id)
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, new_config_en_name,
+                                                      config_desc, tenant_id)
         return response
     else:
         workflow_results = _WorkflowTable.query.filter(
@@ -479,7 +482,8 @@ def workflow_example_clone() -> Response:
         ).all()
         # 查询表中同一用户下是否有重复config_en_name的记录
         if not workflow_results:
-            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc, tenant_id)
+            response = service.workflow_example_clone(workflow_id, user_id, config_name, config_en_name, config_desc,
+                                                      tenant_id)
             return response
         else:
             return jsonify({"code": 7, "msg": "该英文名称已存在, 请重新填写"})
@@ -579,6 +583,22 @@ def workflow_get_list() -> tuple[Response, int] | Response:
     status = request.args.get('status', default='')
 
     result = service.get_workflow_list(cloud_type, keyword, status, page, limit)
+
+    return result
+
+
+# 获取插件列表-内部调用使用，去除用户鉴权
+@app.route("/workflow/list_internal", methods=["GET"])
+def workflow_get_list_for_internal() -> tuple[Response, int] | Response:
+    """
+    Reads and returns workflow data from the specified JSON file.
+    """
+    page = request.args.get('pageNo', default=1)
+    limit = request.args.get('pageSize', default=10000)
+    keyword = request.args.get('keyword', default='')
+    status = request.args.get('status', default='')
+
+    result = service.get_workflow_list_for_internal(keyword, status, page, limit)
 
     return result
 
