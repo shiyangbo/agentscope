@@ -214,6 +214,31 @@ def get_workflow_list(cloud_type, keyword=None, status=None, page=1, limit=10):
         return jsonify({"code": 5000, "msg": "Error occurred while fetching workflow list."})
 
 
+def get_workflow_list_for_internal(keyword=None, status=None, page=1, limit=10000):
+    try:
+
+        query = db.session.query(_WorkflowTable)
+
+        if keyword:
+            query = query.filter(_WorkflowTable.config_name.contains(keyword) |
+                                 _WorkflowTable.config_en_name.contains(keyword))
+        if status:
+            query = query.filter_by(status=status)
+
+        # 获取符合user_id条件的所有记录数
+        total = query.count()
+
+        # 先按example_flag排序，再按updated_time排序
+        workflows = query.order_by(_WorkflowTable.example_flag.desc(),
+                                   _WorkflowTable.updated_time.desc()).paginate(page=int(page), per_page=int(limit))
+
+        workflows_list = [workflow.to_dict() for workflow in workflows]
+        data = {"list": workflows_list, "pageNo": int(page), "pageSize": int(limit), "total": total}
+        return jsonify({"code": 0, "data": data})
+    except SQLAlchemyError as e:
+        logger.error(f"Error occurred while fetching workflow list: {e}")
+        return jsonify({"code": 5000, "msg": "Error occurred while fetching workflow list."})
+
 def workflow_clone(workflow_config, user_id, tenant_ids):
     # 查询相同英文名称的工作流配置，并为新副本生成唯一的名称
     if auth.get_cloud_type() == SIMPLE_CLOUD:
